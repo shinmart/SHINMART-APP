@@ -1181,15 +1181,24 @@ function appClearFilter_(sh) {
   try { sh.showRows(1, sh.getMaxRows()); } catch (e) { /* не критично */ }
 }
 
+// Копия листа без фильтра и скрытых строк (copyTo с отфильтрованного листа копирует только видимое)
+function appTempCopy_(ss, sh) {
+  const c = sh.copyTo(ss);
+  c.setName('_tmp_' + Date.now());
+  appClearFilter_(c);
+  return c;
+}
+
 function appMigrate() {
   const ss = getSS_();
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   const created = [];
+  let tmpZ = null;
   try {
-    const oldZ = ss.getSheetByName('ЗАКУПКИ');
+    const srcZ = ss.getSheetByName('ЗАКУПКИ');
     const oldP = ss.getSheetByName('ПРОДАЖИ');
-    if (!oldZ || !oldP) throw new Error('Не найдены старые листы ЗАКУПКИ и ПРОДАЖИ.');
+    if (!srcZ || !oldP) throw new Error('Не найдены старые листы ЗАКУПКИ и ПРОДАЖИ.');
     if (ss.getSheetByName(APP_NEW_ZAKUP) || ss.getSheetByName(APP_NEW_PRODAJI)) {
       throw new Error('Листы ' + APP_NEW_ZAKUP + ' и/или ' + APP_NEW_PRODAJI + ' уже существуют. Перенос уже выполнялся. ' +
         'Чтобы повторить, удалите эти два листа вручную и запустите перенос снова.');
@@ -1198,6 +1207,9 @@ function appMigrate() {
     PropertiesService.getScriptProperties().setProperty('SS_ID', ss.getId());
 
     // ---------- ПРИХОДЫ (копия ЗАКУПКИ без пустых строк и разделителей дат) ----------
+    // copyTo с листа, где включён фильтр, переносит только видимые строки (L-017): работаем с копией без фильтра
+    tmpZ = appTempCopy_(ss, srcZ);
+    const oldZ = tmpZ;
     const zmap = getHeaderMap(oldZ);
     const zh = resolveCols(zmap, ZAKUP_HEADERS, 'ЗАКУПКИ', ['size', 'brand', 'qty']);
     const wz = oldZ.getLastColumn();
@@ -1274,6 +1286,7 @@ function appMigrate() {
     created.forEach(sh => { try { ss.deleteSheet(sh); } catch (e2) { /* ignore */ } });
     throw e;
   } finally {
+    try { if (tmpZ) ss.deleteSheet(tmpZ); } catch (e3) { /* ignore */ }
     lock.releaseLock();
   }
 }
