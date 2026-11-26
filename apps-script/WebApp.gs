@@ -140,6 +140,12 @@ function appCols_(map, wanted) {
 }
 
 function appDay_(d, tz) { return Utilities.formatDate(d, tz, 'yyyy-MM-dd'); }
+// «Сегодня» — по часовому поясу скрипта (Алматы), а не таблицы: у таблицы пояс Катманду (+45 мин)
+function appToday_() {
+  let tz = 'Asia/Almaty';
+  try { tz = Session.getScriptTimeZone() || tz; } catch (e) { /* в тестах нет Session.getScriptTimeZone */ }
+  return Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+}
 function appNum_(v) { const n = Number(v); return isFinite(n) ? n : 0; }
 function appKey_(size, name) { return String(size).toUpperCase() + '|||' + String(name).toUpperCase(); }
 
@@ -177,7 +183,7 @@ function appStats(p) {
     const ss = getSS_();
     const tz = ss.getSpreadsheetTimeZone();
     const re = /^\d{4}-\d{2}-\d{2}$/;
-    const today = appDay_(new Date(), tz);
+    const today = appToday_();
     const to = re.test(p && p.to) ? p.to : today;
     const from = re.test(p && p.from) ? p.from : to;
     const ps = ss.getSheetByName(SHEETS.PRODAJI);
@@ -233,7 +239,7 @@ function appAbc(p) {
     const ss = getSS_();
     const tz = ss.getSpreadsheetTimeZone();
     const days = [30, 60, 90, 180].indexOf(Math.round(appNum_(p && p.days))) >= 0 ? Math.round(appNum_(p.days)) : 90;
-    const to = appDay_(new Date(), tz);
+    const to = appToday_();
     const from = appDay_(new Date(Date.now() - (days - 1) * 86400000), tz);
     const ps = ss.getSheetByName(SHEETS.PRODAJI);
     const stock = {};
@@ -409,7 +415,7 @@ function appFinishSale(p) {
     if (list.length) recalcFifoForKeys(list);
     SpreadsheetApp.flush();
     PropertiesService.getScriptProperties().setProperty('needsRebuild', 'true');
-    const dateStr = /^\d{4}-\d{2}-\d{2}$/.test((p && p.date) || '') ? p.date : appDay_(new Date(), tz);
+    const dateStr = /^\d{4}-\d{2}-\d{2}$/.test((p && p.date) || '') ? p.date : appToday_();
     const out = Object.assign({ ok: true }, appTodayPack_(dateStr));
     // «Слив»: если продали позицию с активным правилом — свежий остаток и проверка порога
     try {
@@ -446,7 +452,7 @@ function appSaleCore_(email, p, lite) {
     const wo = p.kind === 'writeoff' || p.kind === 'shortage';
     if (price <= 0 && !wo) throw new Error('Укажите цену продажи.');
     const pay = p.kind === 'shortage' ? 'НЕДОСТАЧА' : wo ? 'СПИСАНИЕ' : (APP_PAYS.indexOf(p.pay) !== -1 ? p.pay : 'нал');
-    const dateStr = /^\d{4}-\d{2}-\d{2}$/.test(p.date || '') ? p.date : appDay_(new Date(), tz);
+    const dateStr = /^\d{4}-\d{2}-\d{2}$/.test(p.date || '') ? p.date : appToday_();
 
     if (p.fast) return appFastSale_(ss, tz, email, { size: size, name: name, qty: qty, price: price, pay: pay, dateStr: dateStr });
 
@@ -496,7 +502,7 @@ function appUndoSale(p) {
     appLog_(email, 'ОТМЕНА ПРОДАЖИ', SHEETS.PRODAJI, row, key, '', '', cur);
     PropertiesService.getScriptProperties().setProperty('needsRebuild', 'true');
     const idx = appGetIndex_(true);
-    return Object.assign({ ok: true }, idx, appTodayPack_(p.date || appDay_(new Date(), tz)));
+    return Object.assign({ ok: true }, idx, appTodayPack_(p.date || appToday_()));
   });
 }
 
@@ -507,7 +513,6 @@ function appAddPurchase(p) {
 
 function appPurchaseCore_(email, p, lite) {
   {
-    appRequireNew_();
     const ss = getSS_();
     const tz = ss.getSpreadsheetTimeZone();
     const size = normKeyText(p.size || '');
@@ -525,7 +530,7 @@ function appPurchaseCore_(email, p, lite) {
     if (qty <= 0) throw new Error('Количество должно быть больше нуля.');
     if (cur === 'USD' && (usd <= 0 || rate <= 0)) throw new Error('Укажите цену в долларах и курс.');
     if (cur === 'KZT' && cost <= 0) throw new Error('Укажите цену закупки.');
-    const dateStr = /^\d{4}-\d{2}-\d{2}$/.test(p.date || '') ? p.date : appDay_(new Date(), tz);
+    const dateStr = /^\d{4}-\d{2}-\d{2}$/.test(p.date || '') ? p.date : appToday_();
     const dateObj = Utilities.parseDate(dateStr, tz, 'yyyy-MM-dd');
 
     const zs = ss.getSheetByName(SHEETS.ZAKUP);
@@ -591,7 +596,6 @@ function appPurchaseCore_(email, p, lite) {
 
 function appUndoPurchase(p) {
   return appGuard_(p, true, email => {
-    appRequireNew_();
     const ss = getSS_();
     const zs = ss.getSheetByName(SHEETS.ZAKUP);
     const zmap = getHeaderMap(zs);
@@ -609,7 +613,12 @@ function appUndoPurchase(p) {
       if (remain < qty) throw new Error('Партия уже частично продана. Отмена невозможна.');
     }
     const key = String(zs.getRange(row, zh.size).getValue()) + '|||' + String(zs.getRange(row, zh.brand).getValue());
-    zs.getRange(row, 1, 1, zs.getLastColumn()).clearContent();   // строка остаётся пустой, номера других строк не сдвигаются
+    // очищаем только вводимые ячейки А:J, РАСХОДЫ и НАЦЕН; формулы К..T остаются, как в пустых строках-шаблонах
+    zs.getRange(row, 1, 1, 10).clearContent();
+    if (zx.exp) zs.getRange(row, zx.exp).clearContent();
+    zs.getRange(row, zh.cost).setFormula('=' + colLetter(zx.usd) + row + '*' + colLetter(zx.rate) + row);
+    if (zx.markup) zs.getRange(row, zx.markup).setValue(APP_DEFAULT_MARKUP);
+    zs.getRange(row, zh.cashPrice).setFormula('=CEILING(' + colLetter(zh.cost) + row + '+(' + colLetter(zh.cost) + row + '*' + colLetter(zx.markup) + row + '),1000)+900');
     recalcFifoForKeys([key]);
     SpreadsheetApp.flush();
     appLogMarkUndone_(logRec.logRow);
@@ -635,10 +644,6 @@ function appFillMissingFormulas_(zs, tplRow, r, zh, zx) {
 
 // ===== ЖУРНАЛЫ: общие помощники =====
 
-function appRequireNew_() {
-  // Приходы пока вносятся в старые ЗАКУПКИ вручную: запись прихода из приложения отключена до проверки на копии.
-  throw new Error('Приход из приложения пока отключён. Вносите приходы в лист ЗАКУПКИ как раньше.');
-}
 
 // Скопировать оформление (форматы чисел, шрифты) из строки-образца
 var APP_DOW_ = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
@@ -899,7 +904,7 @@ function appPhotoUrl_(u) {
 function appTodayPack_(dateStr) {
   const ss = getSS_();
   const tz = ss.getSpreadsheetTimeZone();
-  const day = /^\d{4}-\d{2}-\d{2}$/.test(dateStr || '') ? dateStr : appDay_(new Date(), tz);
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(dateStr || '') ? dateStr : appToday_();
   return { sales: appSalesOfDay_(day, tz) };
 }
 
@@ -1093,7 +1098,7 @@ function appAddExpense(p) {
     const sum = Math.round(appNum_(p.sum));
     if (!(sum > 0)) throw new Error('Укажите сумму расхода.');
     const cat = String(p.cat || 'Другое').trim().slice(0, 40) || 'Другое';
-    const day = /^\d{4}-\d{2}-\d{2}$/.test(p.date || '') ? p.date : appDay_(new Date(), tz);
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(p.date || '') ? p.date : appToday_();
     const sh = appExpSheet_();
     const row = Math.max(sh.getLastRow() + 1, 2);
     opsNeedOwner_(email);
@@ -1131,7 +1136,7 @@ function appGetExpenses(p) {
   return appGuard_(p, false, email => {
     opsNeedOwner_(email);
     const tz = getSS_().getSpreadsheetTimeZone();
-    const today = appDay_(new Date(), tz);
+    const today = appToday_();
     return { ok: true, exp: appExpenses_((p && p.from) || today, (p && p.to) || today, tz) };
   });
 }
@@ -1275,7 +1280,7 @@ function appMigrate() {
     flushZ(zv.length);
     if (purchases > 0) nz.getRange(DATA_START_ROW, wz + 1, purchases, 1).setValue('перенос');
     nz.getRange(2, 1).setValue('ЖУРНАЛ ПРИХОДОВ: одна партия = одна строка. Строки добавляет приложение, ниже 4-й строки ничего не вставляйте.');
-    nz.getRange(3, 1).setValue('Данные перенесены из листа ЗАКУПКИ (архив): ' + appDay_(new Date(), tz));
+    nz.getRange(3, 1).setValue('Данные перенесены из листа ЗАКУПКИ (архив): ' + appToday_());
     if (zh.qty) nz.getRange(2, zh.qty).setFormula('=SUM(' + colLetter(zh.qty) + DATA_START_ROW + ':' + colLetter(zh.qty) + ')');
     const sumCol = zmap['СУММА ЗАКУПА'];
     if (sumCol) nz.getRange(2, sumCol).setFormula('=SUM(' + colLetter(sumCol) + DATA_START_ROW + ':' + colLetter(sumCol) + ')');
@@ -1315,7 +1320,7 @@ function appMigrate() {
       PRODAJI_FIFO_COST_HEADER, PRODAJI_FIFO_UNIT_COST_HEADER, PRODAJI_MARGIN_HEADER]]).setFontWeight('bold');
     appWriteSalesBlocks_(np, items, tz);
     np.getRange(2, 1).setValue('ЖУРНАЛ ПРОДАЖ: одна продажа = одна строка. Строки добавляет приложение, ниже 4-й строки ничего не вставляйте.');
-    np.getRange(3, 1).setValue('Данные перенесены из листа ПРОДАЖИ (архив): ' + appDay_(new Date(), tz));
+    np.getRange(3, 1).setValue('Данные перенесены из листа ПРОДАЖИ (архив): ' + appToday_());
     ['D', 'F', 'G', 'H'].forEach(L => np.getRange(2, L.charCodeAt(0) - 64).setFormula('=SUM(' + L + DATA_START_ROW + ':' + L + ')'));
     appClearFilter_(np);
     np.setFrozenRows(3);
