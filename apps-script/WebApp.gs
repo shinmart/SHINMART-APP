@@ -1175,6 +1175,12 @@ function appMigrateUi() {
   }
 }
 
+// Копирование из листа с фильтром приносит фильтр и скрытые строки: без этого setFrozenRows падает (L-016)
+function appClearFilter_(sh) {
+  try { const f = sh.getFilter(); if (f) f.remove(); } catch (e) { /* нет фильтра */ }
+  try { sh.showRows(1, sh.getMaxRows()); } catch (e) { /* не критично */ }
+}
+
 function appMigrate() {
   const ss = getSS_();
   const lock = LockService.getScriptLock();
@@ -1220,6 +1226,7 @@ function appMigrate() {
     if (zh.qty) nz.getRange(2, zh.qty).setFormula('=SUM(' + colLetter(zh.qty) + DATA_START_ROW + ':' + colLetter(zh.qty) + ')');
     const sumCol = zmap['СУММА ЗАКУПА'];
     if (sumCol) nz.getRange(2, sumCol).setFormula('=SUM(' + colLetter(sumCol) + DATA_START_ROW + ':' + colLetter(sumCol) + ')');
+    appClearFilter_(nz);
     nz.setFrozenRows(3);
 
     // ---------- ПРОДАЖИ_ЖУРНАЛ (плоский список: одна продажа = одна строка с датой) ----------
@@ -1257,6 +1264,7 @@ function appMigrate() {
     np.getRange(2, 1).setValue('ЖУРНАЛ ПРОДАЖ: одна продажа = одна строка. Строки добавляет приложение, ниже 4-й строки ничего не вставляйте.');
     np.getRange(3, 1).setValue('Данные перенесены из листа ПРОДАЖИ (архив): ' + appDay_(new Date(), tz));
     ['D', 'F', 'G', 'H'].forEach(L => np.getRange(2, L.charCodeAt(0) - 64).setFormula('=SUM(' + L + DATA_START_ROW + ':' + L + ')'));
+    appClearFilter_(np);
     np.setFrozenRows(3);
 
     PropertiesService.getScriptProperties().setProperty('needsRebuild', 'true');
