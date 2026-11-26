@@ -719,7 +719,13 @@ function flushFinish(){
   run('appFinishSale',{keys:keys,rows:q.rows,date:q.date}).then(function(x){ if(S.sales&&S.sales.rows&&S.sales.rows.some(function(r){ return r.pend; })) return; applyData(x); saveCache(); renderSales(); renderDump(); })
     .catch(function(){ /* подтянется при следующем обновлении */ });
 }
-document.addEventListener('visibilitychange',function(){ if(document.hidden) flushFinish(); });
+var hiddenAt=0;
+document.addEventListener('visibilitychange',function(){
+  if(document.hidden){ hiddenAt=Date.now(); flushFinish(); return; }
+  // вернулись в приложение: правки, сделанные руками в таблице, подтягиваем сами
+  if(hiddenAt&&Date.now()-hiddenAt>45000&&!S.busy&&!finQ){ load(true); }
+  hiddenAt=0;
+});
 $('sheet').addEventListener('click',function(e){
   var t=e.target, it=S.sale.it; if(!it) return;
   if(t.id==='sGo'){ doSale(); return; }

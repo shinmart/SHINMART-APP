@@ -225,6 +225,8 @@ function onEdit(e) {
     if (e.range.getRow() < DATA_START_ROW) return;
 
     PropertiesService.getScriptProperties().setProperty('needsRebuild', 'true');
+    // Правка руками в таблице должна быть видна в приложении сразу, а не через 2 минуты кэша
+    try { CacheService.getScriptCache().remove('APPIDX_meta'); } catch (eCache) { /* не критично */ }
 
     const ss = e.source;
     const zakupSheet = ss.getSheetByName(SHEETS.ZAKUP);
@@ -340,6 +342,8 @@ function onOpen() {
     .addItem('🗓️ Журнал продаж: разбить по дням', 'appRelayoutSalesUi')
     .addItem('🔧 Починить дни недели в журнале продаж', 'appFixDayNamesUi')
     .addItem('📱 Подготовить приложение', 'appPrepare')
+    .addItem('🪞 Обновить старые листы ЗАКУПКИ и ПРОДАЖИ из новых', 'mirrorUi')
+    .addItem('🪞 Авто-зеркало: включить / выключить (раз в час)', 'mirrorAutoToggleUi')
     .addItem('💰 Подготовить деньги: настройки, счета, вложения', 'opsPrepare')
     .addToUi();
 }

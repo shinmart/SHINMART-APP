@@ -19,6 +19,8 @@
 | Фото чеков, вложения | `Ops.gs` § `appUploadFile` | `Index.html` § `shrinkPhoto` |
 | Доступ, `APP_ALLOWED` | `WebApp.gs` § начало файла, `appGuard_` | `LESSONS.md` § Доступ |
 | Раскладка журнала по дням | `WebApp.gs` § `appRelayoutSales`, `appWriteDayHeader_` | L-007 |
+| Зеркало в старые листы ЗАКУПКИ / ПРОДАЖИ | `Mirror.gs` § `mirrorRun`, `mirrorBuildSales_` | `tests/mirror.test.js` |
+| Правка руками в таблице → приложение | `Code.gs` § `onEdit` | `Index.html` § `visibilitychange` |
 | Миграция старых листов | `WebApp.gs` § `appMigrate` | — |
 | Экран приложения | `Index.html` § секция экрана | `design.md` |
 | Починить баг | `docs/code/bugfix.md` | `LESSONS.md` § своя область |
