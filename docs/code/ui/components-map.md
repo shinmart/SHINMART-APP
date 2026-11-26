@@ -30,3 +30,4 @@
 | Список со счётчиком | `drawAcc` / `renderAcc` |
 | Отчёт за период | `drawBank` / `loadBank` |
 | Страница настроек | `drawCfg` / `renderCfg` |
+| Меню слева на ПК | `renderSide` / `goMenu` (общий переход с шторкой `#menu`) |

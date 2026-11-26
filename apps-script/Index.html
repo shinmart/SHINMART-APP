@@ -250,11 +250,57 @@ a.sb{display:flex;align-items:center;justify-content:center;text-decoration:none
 .toast button{color:var(--accent);font-weight:700;height:36px;padding:0 6px}
 .toast.err{background:var(--red)}
 .toast.err button{color:#fff}
+
+/* ПК: от 1000 px — меню слева, контент на всю ширину, окна справа */
+.side{display:none}
+@media (min-width:1000px){
+  :root{--col:1520px;--side:244px}
+  .app{display:grid;grid-template-columns:var(--side) minmax(0,1fr);grid-template-rows:auto auto auto 1fr;align-items:start}
+  .app>:not(.side){grid-column:2}
+  .side{display:flex;flex-direction:column;gap:2px;grid-column:1;grid-row:1/span 4;position:sticky;top:0;height:100vh;overflow:auto;border-right:1px solid var(--line);padding:20px 12px 24px}
+  .sbrand{font-weight:700;font-size:18px;padding:0 12px 14px}
+  .sbrand small{display:block;font-weight:400;font-size:12.5px;color:var(--ink3)}
+  .sh2{font-size:12.5px;font-weight:600;color:var(--ink3);padding:16px 12px 4px}
+  .si{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;height:40px;padding:0 12px;border-radius:10px;text-align:left;font-weight:500;color:var(--ink2);position:relative}
+  .si:hover{background:var(--bg)}
+  .si.on{background:var(--fill);color:var(--ink);font-weight:600}
+  .si.on::before{content:"";position:absolute;left:0;top:9px;bottom:9px;width:3px;border-radius:2px;background:var(--accent)}
+  .si em{font-style:normal;font-size:12.5px;color:var(--ink2);background:var(--fill);border-radius:10px;padding:1px 8px}
+  .si.on em{background:var(--card)}
+  #btnBack,#btnMenu{display:none}
+  .top{padding:16px 24px 8px;border-bottom:1px solid var(--line)}
+  .brand{font-size:20px}
+  .sec,.row,.op,.lnk,.acc,.inrow,.sum3,.invbar,.dayrow,.grp,.h2{padding-left:24px;padding-right:24px}
+  .sec{padding-top:20px;padding-bottom:20px}
+  .sbar{padding-left:24px;padding-right:24px}
+  .banner{margin:8px 24px}.dstop{margin:8px 24px 0}
+  .more{width:calc(100% - 48px);margin:12px 24px}
+  .row:hover,.sug button:hover,.cls-b .op:hover{background:var(--bg)}
+  main{padding-bottom:40px}
+  #tab-sales.on{display:grid;grid-template-columns:minmax(380px,480px) minmax(0,1fr);align-items:start}
+  #tab-sales>.sec{grid-column:1;grid-row:1/span 6;position:sticky;top:var(--topH,64px);min-height:calc(100vh - var(--topH,64px));border-right:1px solid var(--line)}
+  #tab-sales>:not(.sec){grid-column:2}
+  #tab-buy.on{display:grid;grid-template-columns:minmax(380px,540px) minmax(0,1fr)}
+  #tab-buy>.sec:nth-child(1),#tab-buy>.sec:nth-child(2){grid-column:1}
+  #tab-buy>.sec:nth-child(3){grid-column:2;grid-row:1/span 2;border-top:0;border-left:1px solid var(--line)}
+  #moreMain{display:grid;grid-template-columns:1fr 1fr;column-gap:32px;align-content:start}
+  #moreMain>.h2,#moreMain>.kpis,#moreMain>.owner{grid-column:1/-1}
+  #moreMain>.owner{display:grid;grid-template-columns:1fr 1fr;column-gap:32px}
+  #moreMain>.owner>.h2{grid-column:1/-1}
+  #morePage{max-width:980px}
+  #tab-stock{max-width:1120px}
+  .sheet{left:auto;right:0;top:0;bottom:0;width:min(520px,100%);max-height:none;border-radius:0;transform:translateX(100%);box-shadow:-10px 0 32px rgba(15,18,24,.18)}
+  .sheet.on{transform:none}
+  .grab{display:none}
+  #menu{display:none!important}
+  .toast{left:calc(50% + var(--side)/2)}
+}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
 <body>
 <div class="app">
+  <aside class="side" id="side" aria-label="Разделы"></aside>
   <header class="top" id="top">
     <button class="ib hidden" id="btnBack" aria-label="К продаже"><svg class="ico" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
     <div class="brand" id="brand"><span id="ttl" style="display:inline;font-size:inherit;color:inherit;font-weight:700;margin:0">Продажа</span><span id="stamp">ШИНМАРТ</span></div>
@@ -536,6 +582,7 @@ function load(force){
 /* ---------- СКЛАД ---------- */
 var FLT_NAME={stale:'Залежались',low:'Мало',buy:'Докупить',kasp:'Kaspi дороже рынка'};
 function renderFbar(){
+  renderSide();
   var f=S.flt, el=$('fbar');
   if(!f){ el.innerHTML=''; layout(); return; }
   var h='<b>'+FLT_NAME[f]+'</b>';
@@ -975,7 +1022,7 @@ function renderMore(){
   $('eyeVal').textContent=document.body.classList.contains('hide')?'да':'нет';
 }
 function showPage(p){
-  S.page=p; $('moreMain').classList.toggle('hidden',!!p); $('morePage').classList.toggle('hidden',!p);
+  S.page=p; renderSide(); $('moreMain').classList.toggle('hidden',!!p); $('morePage').classList.toggle('hidden',!p);
   if(!p){ window.scrollTo(0,0); return; }
   
   $('morePage').innerHTML='<button class="back" id="pgBack"><svg class="ico" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>Назад</button><div id="pgBody"></div>';
@@ -1318,7 +1365,7 @@ function abcOpen(c){
 }
 
 /* ---------- навигация и общее ---------- */
-function renderAll(){ renderDump(); renderHot(); renderFbar(); renderList(); renderSales(); renderMore(); renderStamp(); layout(); }
+function renderAll(){ renderSide(); renderDump(); renderHot(); renderFbar(); renderList(); renderSales(); renderMore(); renderStamp(); layout(); }
 function renderStamp(){
   var t=S.meta.ts?new Date(S.meta.ts):null;
   $('stamp').textContent=t?'обновлено '+('0'+t.getHours()).slice(-2)+':'+('0'+t.getMinutes()).slice(-2):'ШИНМАРТ';
@@ -1331,7 +1378,7 @@ function setTab(t){
   $('ttl').textContent=TTL[t];
   if(t!=='more' && S.page) showPage('');
   window.scrollTo(0,0);
-  layout();
+  layout(); renderSide();
 }
 function layout(){
   var h=$('top').offsetHeight; document.documentElement.style.setProperty('--topH',h+'px');
@@ -1361,13 +1408,46 @@ function closeMenu(){
   setTimeout(function(){ if(!menuOpen){ m.classList.add('hidden'); if(!sheetOpen) $('shade').classList.add('hidden'); } },270);
 }
 $('btnMenu').onclick=openMenu;
-$('menu').addEventListener('click',function(e){
-  var b=e.target.closest('[data-go]'); if(!b) return; var g=b.getAttribute('data-go');
-  closeMenu();
+function goMenu(g){
   if(g==='refresh'){ load(true); return; }
   if(g.indexOf('flt:')===0){ S.flt=g.slice(4); S.limit=120; setTab('stock'); renderFbar(); renderList(); return; }
-  if(g==='stock'||g==='buy'){ setTab(g); return; }
+  if(g==='stock'||g==='buy'||g==='sales'){ setTab(g); return; }
   setTab('more'); showPage(g==='more'?'':g);
+}
+$('menu').addEventListener('click',function(e){
+  var b=e.target.closest('[data-go]'); if(!b) return;
+  closeMenu(); goMenu(b.getAttribute('data-go'));
+});
+/* ПК: постоянное меню слева */
+function isWide(){ return window.matchMedia&&window.matchMedia('(min-width:1000px)').matches; }
+function renderSide(){
+  var el=$('side'); if(!el||!isWide()) return;
+  var key=S.tab==='more'?(S.page||'more'):(S.tab==='stock'&&S.flt?'flt:'+S.flt:S.tab);
+  function cnt(f){ return (S.items||[]).filter(function(i){ return fltPass(i,f); }).length||''; }
+  function b(go,t,n){ var on=key===go; return '<button class="si'+(on?' on':'')+'" data-go="'+go+'"'+(on?' aria-current="page"':'')+'><span>'+t+'</span>'+(n?'<em>'+n+'</em>':'')+'</button>'; }
+  var dn=(S.dump||[]).filter(function(d){ return d.st==='АКТИВНО'; }).length||'';
+  el.innerHTML='<div class="sbrand">ШИНМАРТ<small>Склад</small></div>'+
+    b('sales','Продажа')+b('stock','Остатки')+b('buy','Приход')+
+    '<div class="sh2">Что требует внимания</div>'+b('flt:buy','Докупить',cnt('buy'))+b('flt:low','Мало',cnt('low'))+b('flt:stale','Залежались',cnt('stale'))+b('flt:kasp','Kaspi дороже рынка',cnt('kasp'))+b('dump','Слив',dn)+
+    '<div class="owner"><div class="sh2">Отчёты</div>'+b('stats','Итоги')+b('abc','ABC-анализ')+
+    '<div class="sh2">Деньги</div>'+b('acc','Счета и переводы')+b('bank','Комиссии')+b('cfg','Настройки учёта')+'</div>'+
+    '<div class="sh2">Прочее</div>'+b('more','Ещё и настройки')+b('refresh','Обновить данные');
+}
+$('side').addEventListener('click',function(e){
+  var b=e.target.closest('[data-go]'); if(!b) return; var g=b.getAttribute('data-go');
+  if(g==='stock'){ S.flt=''; S.limit=120; }
+  goMenu(g);
+  if(g==='stock'){ renderFbar(); renderList(); }
+  if(g==='sales'){ $('sq').focus(); }
+});
+window.addEventListener('resize',renderSide);
+document.addEventListener('keydown',function(e){
+  var t=e.target, typing=t&&/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName);
+  if(e.key==='Escape'){ if(sheetOpen) closeSheet(); return; }
+  if(e.key==='/'&&!typing&&!e.metaKey&&!e.ctrlKey&&!e.altKey){
+    var id={sales:'sq',stock:'q',buy:'buyQ'}[S.tab];
+    if(id&&$(id)&&$(id).offsetParent){ e.preventDefault(); $(id).focus(); }
+  }
 });
 $('q').addEventListener('input',function(){ S.q=this.value; S.limit=120; $('qx').classList.toggle('hidden',!S.q); renderList(); });
 $('qx').onclick=function(){ $('q').value=''; S.q=''; this.classList.add('hidden'); renderList(); $('q').focus(); };
