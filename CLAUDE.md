@@ -68,6 +68,7 @@ LESSONS.md       # уроки из багов
 ```bash
 node tests/ops.test.js     # серверная логика на модели таблицы
 node tests/mirror.test.js  # построение строк зеркала
+node tests/prodaji-blocks.test.js  # блоки дней старого листа ПРОДАЖИ
 ```
 
 Интерфейс — открыть `Index.html` в браузере с подставленным

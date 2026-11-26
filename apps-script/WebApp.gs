@@ -277,6 +277,101 @@ function appAbc(p) {
   });
 }
 
+// ===== ПРОДАЖИ: блоки дней старого листа =====
+// День = оранжевая строка с датой в колонке А, ниже строки продаж, затем итоговые строки
+// («процентное соотношение…»). Приложение заполняет пустую строку внутри блока дня, как вручную.
+
+function appIsSummaryLabel_(v) {
+  return /^\s*процент/i.test(String(v || ''));
+}
+
+// Найти блок дня: { head, first, sumRow } (sumRow — первая итоговая строка или строка после блока)
+function appFindDayBlock_(vals, dateStr, tz) {
+  const heads = [];
+  for (let i = 0; i < vals.length; i++) {
+    if (vals[i][0] instanceof Date) heads.push(i);
+  }
+  for (let h = heads.length - 1; h >= 0; h--) {
+    const i = heads[h];
+    if (appDay_(vals[i][0], tz) !== dateStr) continue;
+    const end = h + 1 < heads.length ? heads[h + 1] : vals.length;
+    let sum = end;
+    for (let j = i + 1; j < end; j++) { if (appIsSummaryLabel_(vals[j][0])) { sum = j; break; } }
+    return { head: DATA_START_ROW + i, first: DATA_START_ROW + i + 1, sumRow: DATA_START_ROW + sum, vals: vals, base: DATA_START_ROW };
+  }
+  return null;
+}
+
+// Создать блок нового дня по образцу последнего: заголовок, пустые строки продаж, итоговые строки с формулами
+function appCreateDayBlock_(ps, vals, dateStr, tz) {
+  let lastHead = -1;
+  for (let i = 0; i < vals.length; i++) if (vals[i][0] instanceof Date) lastHead = i;
+  if (lastHead < 0) throw new Error('В листе ' + SHEETS.PRODAJI + ' нет ни одного блока дня, создайте первый вручную.');
+  const srcFrom = DATA_START_ROW + lastHead;
+  let srcTo = DATA_START_ROW + vals.length - 1;
+  while (srcTo > srcFrom && vals[srcTo - DATA_START_ROW].every(x => String(x).trim() === '')) srcTo--;
+  const n = srcTo - srcFrom + 1;
+  const dst = srcTo + 1;
+  if (dst + n > ps.getMaxRows()) ps.insertRowsAfter(ps.getMaxRows(), n + 50);
+  const w = ps.getLastColumn();
+  ps.getRange(srcFrom, 1, n, w).copyTo(ps.getRange(dst, 1, n, w), SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
+  const dateObj = Utilities.parseDate(dateStr, tz, 'yyyy-MM-dd');
+  ps.getRange(dst, 1).setValue(dateObj);
+  ps.getRange(dst, 2).setValue(appDow_(dateObj, tz));
+  // найти итоговую строку в копии
+  let sumOff = n;
+  for (let j = 1; j < n; j++) { if (appIsSummaryLabel_(vals[srcFrom - DATA_START_ROW + j][0])) { sumOff = j; break; } }
+  // очистить строки продаж (А:D) и числа, введённые вручную, в итоговой части (формулы остаются)
+  if (sumOff > 1) ps.getRange(dst + 1, 1, sumOff - 1, 4).clearContent();
+  if (sumOff < n) {
+    const rg = ps.getRange(dst + sumOff, 3, n - sumOff, w - 2);
+    const f = rg.getFormulas(), v = rg.getValues();
+    for (let r = 0; r < f.length; r++) for (let c = 0; c < f[r].length; c++) {
+      if (!f[r][c] && typeof v[r][c] === 'number') rg.getCell(r + 1, c + 1).clearContent();
+    }
+  }
+  SpreadsheetApp.flush();
+  return dst;
+}
+
+// Строка для новой продажи: первая пустая в блоке дня; нет места — вставляем внутри блока; нет блока — создаём
+function appPlaceSaleRow_(ps, tz, dateStr) {
+  const last = ps.getLastRow();
+  let vals = last >= DATA_START_ROW ? ps.getRange(DATA_START_ROW, 1, last - DATA_START_ROW + 1, 2).getValues() : [];
+  let blk = appFindDayBlock_(vals, dateStr, tz);
+  if (!blk) {
+    appCreateDayBlock_(ps, vals, dateStr, tz);
+    vals = ps.getRange(DATA_START_ROW, 1, ps.getLastRow() - DATA_START_ROW + 1, 2).getValues();
+    blk = appFindDayBlock_(vals, dateStr, tz);
+    if (!blk) throw new Error('Не удалось создать блок дня ' + dateStr + ' в листе ' + SHEETS.PRODAJI + '.');
+  }
+  for (let r = blk.first; r < blk.sumRow; r++) {
+    const a = vals[r - blk.base][0], b = vals[r - blk.base][1];
+    if (String(a).trim() === '' && String(b).trim() === '') return r;
+  }
+  if (blk.sumRow <= blk.first) throw new Error('В блоке дня ' + dateStr + ' нет строк продаж. Добавьте строку в таблице вручную.');
+  // свободных строк нет: вставляем строку между двумя последними строками блока, суммы дня захватят её
+  const w = ps.getLastColumn();
+  const at = Math.max(blk.first, blk.sumRow - 1);        // новая строка встанет перед последней строкой блока
+  ps.insertRowBefore(at);
+  const src = at + 1;                                     // бывшая последняя строка блока
+  ps.getRange(src, 1, 1, w).copyTo(ps.getRange(at, 1, 1, w), SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
+  ps.getRange(at, 1, 1, 4).clearContent();
+  return at;
+}
+
+// Записать значения продажи в строку, не трогая формулы СУММА/СЕБЕС/МАРЖА
+function appWriteSaleCells_(ps, row, ph, priceCol, px, v, email, dateObj) {
+  ps.getRange(row, ph.size).setValue(v.size);
+  ps.getRange(row, ph.brand).setValue(v.name);
+  ps.getRange(row, priceCol).setValue(v.price);
+  ps.getRange(row, ph.qty).setValue(v.qty);
+  if (px.pay) ps.getRange(row, px.pay).setValue(v.pay);
+  if (px.date) ps.getRange(row, px.date).setValue(dateObj).setNumberFormat('dd.mm.yyyy');
+  if (px.who) ps.getRange(row, px.who).setValue(email);
+  if (px.when) ps.getRange(row, px.when).setValue(new Date()).setNumberFormat('dd.mm.yyyy HH:mm');
+}
+
 // ----- ПРОДАЖА -----
 function appAddSale(p) {
   return appGuard_(p, true, email => appSaleCore_(email, p, false));
@@ -291,35 +386,9 @@ function appFastSale_(ss, tz, email, v) {
   for (let i = 0; i < PRODAJI_PRICE_HEADER_CANDIDATES.length && !priceCol; i++) priceCol = map[PRODAJI_PRICE_HEADER_CANDIDATES[i].toUpperCase()] || null;
   if (!priceCol) throw new Error('На листе ' + SHEETS.PRODAJI + ' не найдена колонка ЦЕНА.');
   const px = appCols_(map, APP_PH_EXTRA);
-  const payCol = px.pay || appEnsureCol_(ps, 'ОПЛАТА');
-
-  // хвост листа: смотрим только последние строки
-  let next = 0, lastDay = '', ok = false;
-  const last = ps.getLastRow();
-  if (last < DATA_START_ROW) { next = DATA_START_ROW; ok = true; }
-  else {
-    const from = Math.max(DATA_START_ROW, last - 39);
-    const w = ps.getRange(from, 1, last - from + 1, 2).getValues();
-    for (let i = w.length - 1; i >= 0; i--) {
-      if (w[i][0] instanceof Date) { lastDay = appDay_(w[i][0], tz); ok = true; break; }
-    }
-    next = last + 1;
-  }
-  if (!ok) { const t = appSalesTail_(ps, ph.size, ph.brand, tz); next = t.next; lastDay = t.lastDay; }
-  if (next + 6 > ps.getMaxRows()) ps.insertRowsAfter(ps.getMaxRows(), 1000);
-
   const dateObj = Utilities.parseDate(v.dateStr, tz, 'yyyy-MM-dd');
-  let row = next;
-  if (lastDay !== v.dateStr) { appWriteDayHeader_(ps, row, dateObj); row++; }
-
-  const width = Math.max(ph.size, ph.brand, ph.qty, priceCol, payCol, px.sum || 0, px.date || 0, px.who || 0, px.when || 0);
-  const arr = new Array(width).fill('');
-  arr[ph.size - 1] = v.size; arr[ph.brand - 1] = v.name; arr[priceCol - 1] = v.price; arr[ph.qty - 1] = v.qty; arr[payCol - 1] = v.pay;
-  if (px.date) arr[px.date - 1] = dateObj;
-  if (px.who) arr[px.who - 1] = email;
-  if (px.when) arr[px.when - 1] = new Date();
-  ps.getRange(row, 1, 1, width).setValues([arr]);
-  if (px.sum) ps.getRange(row, px.sum).setFormula('=' + colLetter(ph.qty) + row + '*' + colLetter(priceCol) + row);
+  const row = appPlaceSaleRow_(ps, tz, v.dateStr);
+  appWriteSaleCells_(ps, row, ph, priceCol, px, v, email, dateObj);
   appLog_(email, 'ПРОДАЖА', SHEETS.PRODAJI, row, v.size + '|||' + v.name, v.qty, v.price, [v.size, v.name, v.qty, v.price].join('|'));
   return { ok: true, row: row, fast: true };
 }
@@ -328,20 +397,9 @@ function appFastSale_(ss, tz, email, v) {
 // Приложение вызывает его одним запросом после паузы, сразу для всех продаж подряд.
 function appFinishSale(p) {
   return appGuard_(p, true, email => {
-    appRequireNew_();
     const ss = getSS_();
     const tz = ss.getSpreadsheetTimeZone();
     const ps = ss.getSheetByName(SHEETS.PRODAJI);
-    const rows = ((p && p.rows) || []).map(Number).filter(r => r >= DATA_START_ROW).sort((a, b) => a - b);
-    rows.forEach(r => {
-      try {
-        const a = ps.getRange(r - 1, 1, 2, 1).getValues();
-        let tpl = 0;
-        if (r - 2 >= DATA_START_ROW && !(a[0][0] instanceof Date) && String(a[0][0]).trim() !== '') tpl = r - 1;
-        if (tpl) appCopyFormat_(ps, tpl, r);
-        else appClearRowFormat_(ps, r);
-      } catch (e) { /* оформление не критично */ }
-    });
     const keys = {};
     ((p && p.keys) || []).forEach(k => {
       const size = normKeyText(k.size || ''), name = normKeyText(k.name || '');
@@ -377,7 +435,6 @@ function appEnsureCol_(sh, header) {
 
 function appSaleCore_(email, p, lite) {
   {
-    appRequireNew_();
     const ss = getSS_();
     const tz = ss.getSpreadsheetTimeZone();
     const size = normKeyText(p.size || '');
@@ -399,23 +456,8 @@ function appSaleCore_(email, p, lite) {
     if (!priceCol) throw new Error('На листе ' + SHEETS.PRODAJI + ' не найдена колонка ЦЕНА.');
     const px = appCols_(getHeaderMap(ps), APP_PH_EXTRA);
 
-    const tail = appSalesTail_(ps, ph.size, ph.brand, tz);
-    let row = tail.next;
-    if (tail.lastDay !== dateStr) {
-      appWriteDayHeader_(ps, row, Utilities.parseDate(dateStr, tz, 'yyyy-MM-dd'));
-      row++;
-    }
-    appCopyFormat_(ps, tail.lastSale, row);
-    if (tail.lastSale < DATA_START_ROW) appClearRowFormat_(ps, row);
-    ps.getRange(row, ph.size).setValue(size);
-    ps.getRange(row, ph.brand).setValue(name);
-    ps.getRange(row, priceCol).setValue(price);
-    ps.getRange(row, ph.qty).setValue(qty);
-    ps.getRange(row, px.pay || appEnsureCol_(ps, 'ОПЛАТА')).setValue(pay);
-    if (px.sum) ps.getRange(row, px.sum).setFormula('=' + colLetter(ph.qty) + row + '*' + colLetter(priceCol) + row);
-    if (px.date) ps.getRange(row, px.date).setValue(Utilities.parseDate(dateStr, tz, 'yyyy-MM-dd')).setNumberFormat('dd.mm.yyyy');
-    if (px.who) ps.getRange(row, px.who).setValue(email);
-    if (px.when) ps.getRange(row, px.when).setValue(new Date()).setNumberFormat('dd.mm.yyyy HH:mm');
+    const row = appPlaceSaleRow_(ps, tz, dateStr);
+    appWriteSaleCells_(ps, row, ph, priceCol, px, { size: size, name: name, qty: qty, price: price, pay: pay }, email, Utilities.parseDate(dateStr, tz, 'yyyy-MM-dd'));
 
     recalcFifoForKeys([size + '|||' + name]);
     SpreadsheetApp.flush();
@@ -433,7 +475,6 @@ function appSaleCore_(email, p, lite) {
 
 function appUndoSale(p) {
   return appGuard_(p, true, email => {
-    appRequireNew_();
     const ss = getSS_();
     const tz = ss.getSpreadsheetTimeZone();
     const ps = ss.getSheetByName(SHEETS.PRODAJI);
@@ -447,7 +488,8 @@ function appUndoSale(p) {
     if (cur !== logRec.sig) throw new Error('Строка в таблице изменилась после записи. Удалите её вручную.');
 
     const key = String(ps.getRange(row, ph.size).getValue()) + '|||' + String(ps.getRange(row, ph.brand).getValue());
-    ps.getRange(row, 1, 1, ps.getLastColumn()).clearContent();      // строка остаётся пустой, номера других строк не сдвигаются
+    ps.getRange(row, ph.size).clearContent(); ps.getRange(row, ph.brand).clearContent();   // формулы СУММА/СЕБЕС/МАРЖА остаются
+    ps.getRange(row, priceCol).clearContent(); ps.getRange(row, ph.qty).clearContent();   // номера других строк не сдвигаются
     recalcFifoForKeys([key]);
     SpreadsheetApp.flush();
     appLogMarkUndone_(logRec.logRow);
@@ -594,9 +636,8 @@ function appFillMissingFormulas_(zs, tplRow, r, zh, zx) {
 // ===== ЖУРНАЛЫ: общие помощники =====
 
 function appRequireNew_() {
-  if (SHEETS.ZAKUP !== APP_NEW_ZAKUP || SHEETS.PRODAJI !== APP_NEW_PRODAJI) {
-    throw new Error('Данные ещё не перенесены в новые листы. В таблице: меню «Остатки и FIFO» → «📦 Перенести данные в новые листы».');
-  }
+  // Приходы пока вносятся в старые ЗАКУПКИ вручную: запись прихода из приложения отключена до проверки на копии.
+  throw new Error('Приход из приложения пока отключён. Вносите приходы в лист ЗАКУПКИ как раньше.');
 }
 
 // Скопировать оформление (форматы чисел, шрифты) из строки-образца
