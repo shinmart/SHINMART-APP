@@ -224,6 +224,10 @@ details.more2[open] summary::after{content:" ▴"}
 a.sb{display:flex;align-items:center;justify-content:center;text-decoration:none}
 
 .seller .owner{display:none!important}
+.dstop{margin:8px 12px 0;padding:12px 14px;border-radius:14px;background:#c0392b;color:#fff;font-weight:600;font-size:14.5px;line-height:1.35}
+.dstop small{display:block;font-weight:400;opacity:.9;font-size:12.5px;margin-top:2px}
+.dbar{height:8px;border-radius:4px;background:var(--fill);margin-top:8px;overflow:hidden}.dbar i{display:block;height:100%;background:var(--accent)}.dbar.end i{background:#c0392b}
+.pick{padding:10px 14px;border-bottom:1px solid var(--line);font-weight:500}.pick small{display:block;color:var(--ink2);font-weight:400;font-size:12.5px}
 .sel{width:100%;height:46px;border-radius:12px;border:0;background:var(--fill);padding:0 12px;font-size:16px;font-weight:600;outline:0;-webkit-appearance:none;appearance:none}
 .acc{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line)}
 .acc .undo{display:block;margin:6px 0 0 auto}.acc>div:last-child{padding-left:14px}
@@ -258,6 +262,7 @@ a.sb{display:flex;align-items:center;justify-content:center;text-decoration:none
     <button class="ib" id="btnMenu" aria-label="Меню"><svg class="ico" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
   </header>
   <div id="banner"></div>
+  <div id="dumpBar"></div>
 
   <main>
     <!-- СКЛАД -->
@@ -356,6 +361,7 @@ a.sb{display:flex;align-items:center;justify-content:center;text-decoration:none
         <button class="lnk" data-flt="stale"><span>Залежались<small>не продавались 30, 60 или 90 дней</small></span><span style="display:flex;align-items:center"><em id="cnStale"></em><svg class="ico chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span></button>
         <button class="lnk" data-flt="low"><span>Мало<small>меньше 4 шт или хватит меньше чем на 2 недели</small></span><span style="display:flex;align-items:center"><em id="cnLow"></em><svg class="ico chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span></button>
         <button class="lnk" data-flt="buy"><span>Докупить<small>запаса меньше чем на 45 дней</small></span><span style="display:flex;align-items:center"><em id="cnBuy"></em><svg class="ico chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span></button>
+        <button class="lnk" data-page="dump"><span>Слив<small>продавать дешевле, пока не останется нужное количество</small></span><span style="display:flex;align-items:center"><em id="cnDump"></em><svg class="ico chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span></button>
         <button class="lnk" data-flt="kasp"><span>Kaspi дороже рынка<small>ваша цена выше минимальной у конкурентов</small></span><span style="display:flex;align-items:center"><em id="cnKasp"></em><svg class="ico chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span></button>
         <div class="h2 owner">Отчёты</div>
         <button class="lnk owner" data-page="stats"><span>Итоги за период<small>выручка, маржа, топ размеров и брендов</small></span><svg class="ico chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
@@ -504,6 +510,7 @@ function applyData(r){
   if(r.items){ S.items=r.items; S.meta=r.meta||{}; }
   if(r.sales && (!r.sales.date || r.sales.date===S.salesDay)) S.sales=r.sales;
   if(r.purchases) S.purchases=r.purchases;
+  if(r.dump) S.dump=r.dump;
 }
 function saveCache(){ lsSet('shm_idx_v2',JSON.stringify({items:S.items,meta:S.meta,sales:S.sales,purchases:S.purchases})); }
 var loadTries=0;
@@ -709,7 +716,7 @@ function queueFinish(it,row,date){
 function flushFinish(){
   if(!finQ) return; var q=finQ; finQ=null;
   var keys=Object.keys(q.keys).map(function(k){ return q.keys[k]; });
-  run('appFinishSale',{keys:keys,rows:q.rows,date:q.date}).then(function(x){ if(S.sales&&S.sales.rows&&S.sales.rows.some(function(r){ return r.pend; })) return; applyData(x); saveCache(); renderSales(); })
+  run('appFinishSale',{keys:keys,rows:q.rows,date:q.date}).then(function(x){ if(S.sales&&S.sales.rows&&S.sales.rows.some(function(r){ return r.pend; })) return; applyData(x); saveCache(); renderSales(); renderDump(); })
     .catch(function(){ /* подтянется при следующем обновлении */ });
 }
 document.addEventListener('visibilitychange',function(){ if(document.hidden) flushFinish(); });
@@ -956,6 +963,7 @@ function renderMore(){
   $('cnStale').textContent=S.items.filter(function(i){ return fltPass(i,'stale'); }).length;
   $('cnLow').textContent=S.items.filter(function(i){ return fltPass(i,'low'); }).length;
   $('cnBuy').textContent=S.items.filter(function(i){ return fltPass(i,'buy'); }).length;
+  $('cnDump').textContent=(S.dump||[]).filter(function(d){ return d.st==='АКТИВНО'; }).length||'';
   $('cnKasp').textContent=S.items.filter(function(i){ return fltPass(i,'kasp'); }).length;
   $('thrVal').textContent=S.minMargin>0?fm(S.minMargin)+' ₸':'выкл.';
   $('eyeVal').textContent=document.body.classList.contains('hide')?'да':'нет';
@@ -967,7 +975,7 @@ function showPage(p){
   $('morePage').innerHTML='<button class="back" id="pgBack"><svg class="ico" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>Назад</button><div id="pgBody"></div>';
   $('pgBack').onclick=function(){ showPage(''); };
   window.scrollTo(0,0);
-  if(p==='stats'){ drawStatsShell(); loadStats(); } else if(p==='abc'){ drawAbcShell(); loadAbc(); } else if(p==='inv'){ drawInv(); } else if(p==='exp'){ drawExp(); } else if(p==='acc'){ drawAcc(); } else if(p==='bank'){ drawBank(); } else if(p==='cfg'){ drawCfg(); }
+  if(p==='stats'){ drawStatsShell(); loadStats(); } else if(p==='abc'){ drawAbcShell(); loadAbc(); } else if(p==='inv'){ drawInv(); } else if(p==='exp'){ drawExp(); } else if(p==='dump'){ drawDump(); } else if(p==='acc'){ drawAcc(); } else if(p==='bank'){ drawBank(); } else if(p==='cfg'){ drawCfg(); }
 }
 $('moreMain').addEventListener('click',function(e){
   var b=e.target.closest('button'); if(!b) return;
@@ -1140,6 +1148,61 @@ function renderExp(e){
   el.innerHTML=h;
 }
 
+
+// слив: правило «продаю по низкой цене, пока не останется N шт»
+var dumpShown={};
+function dumpLeft(d){ var it=null,i; for(i=0;i<S.items.length;i++){ if(S.items[i].s===d.s&&S.items[i].n===d.n){ it=S.items[i]; break; } } return it?it.o:d.o; }
+function renderDump(){
+  var el=$('dumpBar'); if(!el) return;
+  var h='', rules=S.dump||[];
+  rules.forEach(function(d){
+    var left=dumpLeft(d);
+    if(d.st==='СТОП'||left<=d.stop){
+      h+='<div class="dstop">⛔ Хватит сливать: '+esc(d.s)+' · '+esc(d.n)+'<small>осталось '+left+' шт, порог '+d.stop+'. Продавайте по обычной цене.</small></div>';
+      if(!dumpShown[d.k]){ dumpShown[d.k]=1; toast('Хватит сливать',d.s+' · осталось '+left+' шт',{err:true}); }
+    }
+  });
+  el.innerHTML=h;
+}
+function drawDump(){
+  var owner=!(S.ops&&S.ops.role==='seller');
+  $('pgBody').innerHTML=(owner?'<div class="sec"><div class="lbl">Новое правило: найти позицию</div><input class="inp" id="dmQ" placeholder="размер или модель" style="font-size:16px" autocomplete="off"><div id="dmRes"></div><div id="dmForm"></div></div>':'')+'<div id="dmList"></div>';
+  renderDumpList();
+  if(!owner) return;
+  $('dmQ').oninput=function(){
+    var q=this.value.trim().toUpperCase().replace(/\s+/g,''); var h='';
+    if(q.length>=2){
+      var res=S.items.filter(function(it){ return it.o>0&&(String(it.s).toUpperCase().replace(/[\/R]/g,'').indexOf(q.replace(/[\/R]/g,''))>=0||String(it.n).toUpperCase().replace(/\s+/g,'').indexOf(q)>=0); }).slice(0,6);
+      h=res.map(function(it){ return '<div class="pick" data-k="'+esc(it.k)+'">'+esc(it.s)+' · '+esc(it.n)+'<small>на складе '+it.o+' шт</small></div>'; }).join('')||'<div class="empty" style="padding:12px">Не найдено</div>';
+    }
+    $('dmRes').innerHTML=h;
+  };
+  $('dmRes').onclick=function(e){
+    var b=e.target.closest('.pick'); if(!b) return; var k=b.getAttribute('data-k'), it=null,i;
+    for(i=0;i<S.items.length;i++){ if(S.items[i].k===k){ it=S.items[i]; break; } }
+    if(!it) return; $('dmRes').innerHTML='';
+    $('dmForm').innerHTML='<div class="op"><div class="l"><b>'+esc(it.s)+'</b><div class="m">'+esc(it.n)+' · на складе '+it.o+' шт</div></div></div>'+
+      '<div class="g2"><div class="f"><div class="lbl">Сливать, пока не останется, шт</div><input class="inp" id="dmStop" inputmode="numeric" value="'+Math.floor(it.o/2)+'"></div><div class="f"><div class="lbl">Цена слива, ₸</div><input class="inp" id="dmPrice" inputmode="numeric" placeholder="необязательно"></div></div>'+
+      '<button class="go" id="dmGo">Поставить правило</button>';
+    $('dmGo').onclick=function(){
+      var b2=$('dmGo'); b2.disabled=true;
+      run('appDumpSet',{reqId:rid(),size:it.s,name:it.n,stop:num($('dmStop').value),price:num($('dmPrice').value)}).then(function(r){
+        S.dump=r.dump; delete dumpShown[it.k]; $('dmForm').innerHTML=''; $('dmQ').value=''; toast('Правило поставлено','остановить при '+num($('dmStop').value)+' шт'); renderDumpList(); renderDump(); renderMore();
+      }).catch(function(er){ toast('Не поставлено',er.message,{err:true}); b2.disabled=false; });
+    };
+  };
+}
+function renderDumpList(){
+  var el=$('dmList'); if(!el) return; var rules=S.dump||[], owner=!(S.ops&&S.ops.role==='seller');
+  if(!rules.length){ el.innerHTML='<div class="empty">Правил слива нет.</div>'; return; }
+  el.innerHTML='<div class="h2">Правила</div>'+rules.map(function(d){
+    var left=dumpLeft(d), stopped=d.st==='СТОП'||left<=d.stop, total=Math.max(d.start-d.stop,1), done=Math.min(total,Math.max(0,d.start-left));
+    return '<div class="op"><div class="l"><b>'+esc(d.s)+'</b><div class="m">'+esc(d.n)+'</div><div class="m">'+(stopped?'⛔ хватит: осталось '+left+' шт':'осталось '+left+' из '+d.start+', стоп при '+d.stop)+(d.price?' · слив по '+money(d.price):'')+'</div><div class="dbar'+(stopped?' end':'')+'"><i style="width:'+Math.round(done/total*100)+'%"></i></div>'+(owner?'<button class="undo" data-row="'+d.row+'">Снять правило</button>':'')+'</div></div>';
+  }).join('');
+  el.onclick=function(e){ var b=e.target.closest('.undo'); if(!b) return;
+    run('appDumpClear',{reqId:rid(),row:num(b.getAttribute('data-row'))}).then(function(r){ S.dump=r.dump; toast('Правило снято'); renderDumpList(); renderDump(); renderMore(); }).catch(function(er){ toast('Не снялось',er.message,{err:true}); });
+  };
+}
 // счета и переводы
 function drawAcc(){
   $('pgBody').innerHTML='<div id="accList"><div class="empty">Загружаю…</div></div>';
@@ -1249,7 +1312,7 @@ function abcOpen(c){
 }
 
 /* ---------- навигация и общее ---------- */
-function renderAll(){ renderHot(); renderFbar(); renderList(); renderSales(); renderMore(); renderStamp(); layout(); }
+function renderAll(){ renderDump(); renderHot(); renderFbar(); renderList(); renderSales(); renderMore(); renderStamp(); layout(); }
 function renderStamp(){
   var t=S.meta.ts?new Date(S.meta.ts):null;
   $('stamp').textContent=t?'обновлено '+('0'+t.getHours()).slice(-2)+':'+('0'+t.getMinutes()).slice(-2):'ШИНМАРТ';

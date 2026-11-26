@@ -11,7 +11,7 @@
 
 | Метод | Параметры | Ответ | Кто |
 |-------|-----------|-------|-----|
-| `appInit` / `appRefresh` | `date` | `items`, `meta`, `sales`, `role` | все |
+| `appInit` / `appRefresh` | `date` | `items`, `meta`, `sales`, `role`, `dump` | все |
 | `appGetSales` | `date` | `sales` дня | все |
 | `appAddSale` | `size,name,qty,price,pay,date,reqId` | `row`, индекс | все |
 | `appFinishSale` | `keys,rows,date` | индекс (пересчёт FIFO) | все |
@@ -34,6 +34,9 @@
 | `appUndoExpense` | `row,from,to,reqId` | `exp` | owner |
 | `appGetExpenses` | `from,to` | `exp{sum,cats,rows}` | owner |
 | `appBankInfo` | `from,to` | `fee`, `pays[{n,s,fee}]`, `pending{sum,fee,items}` | owner |
+| `appDumpList` | — | `dump[{row,k,s,n,stop,price,start,st,o}]` | все |
+| `appDumpSet` | `size,name,stop,price?,reqId` | `dump` | owner |
+| `appDumpClear` | `row,reqId` | `dump` | owner |
 | `appUploadFile` | `b64,mime,kind,reqId` | `url`, `name` | все |
 
 ## Ошибки

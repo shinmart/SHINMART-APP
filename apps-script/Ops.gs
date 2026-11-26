@@ -319,3 +319,105 @@ function opsScrub_(email, res) {
   };
   return walk(res, '');
 }
+
+// ===== СЛИВ: «продаю по низкой цене, пока не останется N шт» =====
+// Лист СЛИВ: одно правило на позицию. АКТИВНО → когда остаток дошёл до порога → СТОП (один раз письмо) → владелец снимает или ставит новое.
+
+const OPS_DUMP_SHEET = 'СЛИВ';
+
+function opsDumpSheet_() {
+  const ss = getSS_();
+  let sh = ss.getSheetByName(OPS_DUMP_SHEET);
+  if (sh) return sh;
+  sh = ss.insertSheet(OPS_DUMP_SHEET);
+  sh.getRange(1, 1, 1, 10).setValues([['КЛЮЧ', 'РАЗМЕР', 'МОДЕЛЬ', 'СТОП (ОСТАТОК)', 'ЦЕНА СЛИВА', 'ОСТАТОК НА СТАРТЕ', 'СОЗДАНО', 'КТО', 'СТАТУС', 'УВЕДОМЛЕНО']]).setFontWeight('bold');
+  sh.setFrozenRows(1);
+  return sh;
+}
+
+function opsDumpRules_() {
+  const sh = opsDumpSheet_();
+  const last = sh.getLastRow();
+  const out = [];
+  if (last < 2) return out;
+  sh.getRange(2, 1, last - 1, 10).getValues().forEach((r, i) => {
+    const st = String(r[8] || '');
+    if (!r[0] || !st || st === 'СНЯТО') return;
+    out.push({ row: i + 2, k: String(r[0]), s: String(r[1]), n: String(r[2]), stop: appNum_(r[3]), price: appNum_(r[4]), start: appNum_(r[5]), st: st });
+  });
+  return out;
+}
+
+function opsDumpItem_(items, key) {
+  for (let i = 0; i < items.length; i++) { if (appKey_(items[i].s, items[i].n) === key) return items[i]; }
+  return null;
+}
+
+// Письмо владельцам (в приложении сигнал и так виден). Ошибка отправки не должна ломать продажу.
+function opsDumpMail_(rule, left) {
+  try {
+    const to = APP_ALLOWED.filter(a => !/example\.com|POCHTA/i.test(a) && opsRole_(String(a).toLowerCase()) === 'owner').join(',');
+    if (!to) return;
+    MailApp.sendEmail(to, 'ШИНМАРТ: хватит сливать ' + rule.s,
+      rule.s + ' · ' + rule.n + '\nОсталось ' + left + ' шт (порог ' + rule.stop + '). Перестаньте продавать по цене слива' + (rule.price ? ' (' + rule.price + ' ₸)' : '') + '.');
+  } catch (e) { console.error(e); }
+}
+
+// Проверка правил по текущим остаткам. onlyKeys — проверить только эти позиции (после продажи).
+function opsDumpCheck_(items, onlyKeys) {
+  const hit = [];
+  const sh = opsDumpSheet_();
+  opsDumpRules_().forEach(r => {
+    if (r.st !== 'АКТИВНО') return;
+    if (onlyKeys && onlyKeys.indexOf(r.k) < 0) return;
+    const it = opsDumpItem_(items, r.k);
+    if (!it || !(it.o <= r.stop)) return;
+    sh.getRange(r.row, 9, 1, 2).setValues([['СТОП', new Date()]]);
+    opsDumpMail_(r, it.o);
+    hit.push(r.k);
+  });
+  return hit;
+}
+
+// Правила для экрана: с текущим остатком. Видят все роли (продавцу важно знать, что слив закончен).
+function opsDumpView_(items) {
+  return opsDumpRules_().map(r => {
+    const it = opsDumpItem_(items, r.k);
+    return { row: r.row, k: r.k, s: r.s, n: r.n, stop: r.stop, price: r.price, start: r.start, st: r.st, o: it ? it.o : 0 };
+  });
+}
+
+function appDumpList(p) {
+  return appGuard_(p, false, () => ({ ok: true, dump: opsDumpView_(appGetIndex_(false).items) }));
+}
+
+function appDumpSet(p) {
+  return appGuard_(p, true, email => {
+    opsNeedOwner_(email);
+    const items = appGetIndex_(false).items;
+    const it = appFindItem_(p.size, p.name);
+    if (!it) throw new Error('Позиция не найдена на складе.');
+    const stop = Math.round(appNum_(p.stop));
+    if (!(stop >= 0)) throw new Error('Укажите, сколько шин оставить.');
+    if (!(it.o > stop)) throw new Error('На складе сейчас ' + it.o + ' шт, порог должен быть меньше.');
+    const price = Math.round(appNum_(p.price));
+    const sh = opsDumpSheet_();
+    const key = appKey_(it.s, it.n);
+    const ex = opsDumpRules_().filter(r => r.k === key)[0];
+    const row = ex ? ex.row : Math.max(sh.getLastRow() + 1, 2);
+    sh.getRange(row, 1, 1, 10).setValues([[key, it.s, it.n, stop, price || '', it.o, new Date(), email, 'АКТИВНО', '']]);
+    appLog_(email, 'СЛИВ', OPS_DUMP_SHEET, row, key, it.o, stop, '');
+    return { ok: true, dump: opsDumpView_(items) };
+  });
+}
+
+function appDumpClear(p) {
+  return appGuard_(p, true, email => {
+    opsNeedOwner_(email);
+    const row = Math.round(appNum_(p.row));
+    const r = opsDumpRules_().filter(x => x.row === row)[0];
+    if (!r) throw new Error('Правило не найдено.');
+    opsDumpSheet_().getRange(row, 9).setValue('СНЯТО');
+    return { ok: true, dump: opsDumpView_(appGetIndex_(false).items) };
+  });
+}

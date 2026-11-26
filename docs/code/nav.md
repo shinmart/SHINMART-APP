@@ -14,6 +14,7 @@
 | Итоги, ABC | `WebApp.gs` § `appStats`, `appAbc` | `appReadSales_` |
 | Расходы | `WebApp.gs` § `appAddExpense`, `appExpenses_` | `Ops.gs` § `opsMove_` |
 | Счета, переводы, комиссии, «ждём зачисления» | `Ops.gs` § `opsAccounts_`, `appTransfer`, `appBankInfo` | `НАСТРОЙКИ` |
+| Слив до остатка (правило, стоп, письмо) | `Ops.gs` § `opsDumpCheck_`, `appDumpSet` | `Index.html` § `renderDump`, `drawDump` |
 | Роли, скрытие себестоимости | `Ops.gs` § `opsRole_`, `opsScrub_` | `WebApp.gs` § `appGuard_` |
 | Фото чеков, вложения | `Ops.gs` § `appUploadFile` | `Index.html` § `shrinkPhoto` |
 | Доступ, `APP_ALLOWED` | `WebApp.gs` § начало файла, `appGuard_` | `LESSONS.md` § Доступ |
@@ -47,6 +48,7 @@
 | `ОСТАТКИ` | текущие остатки и Kaspi-анализ | `Code.gs` |
 | `РАСХОДЫ` | расходы (+ СЧЁТ, ЧЕК) | `WebApp.gs` |
 | `НАСТРОЙКИ` | оплата и комиссии, категории, роли | `Ops.gs` |
+| `СЛИВ` | правила «сливать до N шт», статус АКТИВНО / СТОП / СНЯТО | `Ops.gs` |
 | `СЧЕТА` | счета и начальные остатки | `Ops.gs` |
 | `ДВИЖЕНИЕ_ДЕНЕГ` | движения денег | `Ops.gs` |
 | `APP_ЖУРНАЛ` | журнал действий, основа отмены | `WebApp.gs` |

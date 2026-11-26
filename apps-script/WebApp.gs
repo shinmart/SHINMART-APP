@@ -154,6 +154,10 @@ function appInit(p) {
 // Продавцу не отдаём партии с себестоимостью (кэш индекса общий, поэтому копируем позиции).
 function appForRole_(email, res) {
   res.role = opsRole_(email);
+  try {
+    opsDumpCheck_(res.items || []);
+    res.dump = opsDumpView_(res.items || []);
+  } catch (e) { console.error(e); res.dump = []; }
   return res;
 }
 
@@ -348,7 +352,17 @@ function appFinishSale(p) {
     SpreadsheetApp.flush();
     PropertiesService.getScriptProperties().setProperty('needsRebuild', 'true');
     const dateStr = /^\d{4}-\d{2}-\d{2}$/.test((p && p.date) || '') ? p.date : appDay_(new Date(), tz);
-    return Object.assign({ ok: true }, appTodayPack_(dateStr));
+    const out = Object.assign({ ok: true }, appTodayPack_(dateStr));
+    // «Слив»: если продали позицию с активным правилом — свежий остаток и проверка порога
+    try {
+      const act = opsDumpRules_().filter(r => r.st === 'АКТИВНО' && list.some(k => appKey_(k.split('|||')[0], k.split('|||')[1]) === r.k));
+      if (act.length) {
+        const items = appGetIndex_(true).items;
+        opsDumpCheck_(items, act.map(r => r.k));
+        out.dump = opsDumpView_(items);
+      }
+    } catch (e) { console.error(e); }
+    return out;
   });
 }
 

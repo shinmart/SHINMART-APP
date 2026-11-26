@@ -28,7 +28,10 @@ let src=['WebApp','Ops'].map(f=>fs.readFileSync(__dirname+'/../apps-script/'+f+'
 src=src.replace(/\nconst (\w+) =/g,'\nglobalThis.$1 =');
 // appReadSales_ заглушка: два продажи
 src+=`\nglobalThis.appReadSales_=function(){ const t=new Date(); const d=Utilities.formatDate(t,'x','yyyy-MM-dd'); return [{day:d,price:100000,qty:4,cost:300000,margin:100000,pay:'QR',size:'a',name:'b',row:5,who:'x'},{day:d,price:50000,qty:2,cost:80000,margin:20000,pay:'рассрочка',size:'a',name:'b',row:6,who:'x'},{day:d,price:30000,qty:1,cost:20000,margin:10000,pay:'нал',size:'a',name:'b',row:7,who:'x'}]; };`;
-src+=`\nglobalThis.APP_ALLOWED=['owner@x.kz','seller@x.kz'];globalThis.appLog_=()=>{};`;
+src+=`\nglobalThis.APP_ALLOWED=['owner@x.kz','seller@x.kz'];
+globalThis.ITEMS=[{s:'235/45R18',n:'HANKOOK W',o:100,c:50000,b:[[1,'S',100,50000]]}];
+globalThis.appGetIndex_=()=>({items:ITEMS,meta:{}}); globalThis.normKeyText=x=>String(x);
+globalThis.MAILS=[]; global.MailApp={sendEmail:(to,sub,body)=>MAILS.push(sub)};globalThis.appLog_=()=>{};`;
 (0,eval)(src);
 (async()=>{
  const ok=(c,m)=>{ if(!c){console.log('FAIL',m);process.exitCode=1;} else console.log('ok  ',m); };
@@ -50,13 +53,21 @@ src+=`\nglobalThis.APP_ALLOWED=['owner@x.kz','seller@x.kz'];globalThis.appLog_=(
  r=appSaveSettings({reqId:'s1',pays:[{n:'нал',fee:0,days:0},{n:'QR',fee:1,days:1}],cats:['Аренда','Еда']}); ok(r.ok&&r.pays.length===2&&r.cats.length===2,'save settings');
  // отмена расхода
  const rows=appGetExpenses({}).exp.rows; 
+ // слив
+
+ r=appDumpSet({reqId:'d1',size:'235/45R18',name:'HANKOOK W',stop:50,price:30000}); ok(r.ok&&r.dump.length===1&&r.dump[0].st==='АКТИВНО'&&r.dump[0].o===100,'dump rule set');
+ ok(!appDumpSet({reqId:'d2',size:'235/45R18',name:'HANKOOK W',stop:100}).ok,'stop must be below stock');
+ ITEMS[0].o=60; let v=appForRole_('owner@x.kz',{items:ITEMS}); ok(v.dump[0].st==='АКТИВНО'&&MAILS.length===0,'60 left: still active, no mail');
+ ITEMS[0].o=50; v=appForRole_('owner@x.kz',{items:ITEMS}); ok(v.dump[0].st==='СТОП'&&MAILS.length===1,'50 left: STOP + one mail');
+ v=appForRole_('owner@x.kz',{items:ITEMS}); ok(MAILS.length===1,'no second mail');
+ r=appDumpClear({reqId:'d3',row:2}); ok(r.ok&&r.dump.length===0,'rule cleared');
  // продавец
  const st=opsSettingsSheet_(); st.getRange(2,8,1,2).setValues([['seller@x.kz','продавец']]);
  user='seller@x.kz';
  r=appOpsInit({}); ok(r.role==='seller'&&!r.accs,'seller: no accounts');
  ok(!appStats({}).ok,'seller: stats blocked'); ok(!appAddExpense({reqId:'e3',cat:'x',sum:5}).ok,'seller: expense blocked');
  ok(!appTransfer({reqId:'t9',from:'Касса',to:'Kaspi',sum:1}).ok,'seller: transfer blocked');
- ok(!appBankInfo({}).ok,'seller: bank blocked');
+ ok(!appBankInfo({}).ok,'seller: bank blocked'); ok(!appDumpSet({reqId:'d9',size:'235/45R18',name:'HANKOOK W',stop:10}).ok,'seller: cannot set dump'); ok(appDumpList({}).ok,'seller: can see dump list');
  const scr=opsScrub_('seller@x.kz',{ok:true,items:[{s:'1',b:[[1,2,3]],c:500,kv:3}],rows:[{c:9,m:8,pr:7}],cost:5});
  ok(scr.items[0].b.length===0&&scr.items[0].c===0&&scr.rows[0].m===0&&scr.rows[0].pr===7&&scr.cost===0,'scrub');
  user='owner@x.kz'; ok(opsScrub_('owner@x.kz',{cost:5}).cost===5,'owner not scrubbed');
