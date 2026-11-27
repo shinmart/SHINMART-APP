@@ -936,10 +936,14 @@ function appReadSales_(ps, tz, ranges) {
   if (last < DATA_START_ROW) return out;
   const w = Math.min(ps.getLastColumn(), Math.max(ph.size, ph.brand, ph.qty, priceCol || 1,
     ...Object.keys(px).map(k => px[k] || 1)));
+  let bad = false;
   (ranges || [{ from: DATA_START_ROW, n: last - DATA_START_ROW + 1 }]).forEach(rg => {
-    if (rg.n > 0) appParseSales_(ps.getRange(rg.from, 1, rg.n, w).getValues(), rg.from, tz, ph, priceCol, px, out);
+    if (!(rg.n > 0) || bad) return;
+    const v = ps.getRange(rg.from, 1, rg.n, w).getValues();
+    if (rg.check) { const h = v[0][ph.size - 1]; if (!(h instanceof Date) || appDay_(h, tz) !== rg.check) { bad = true; return; } }
+    appParseSales_(v, rg.from, tz, ph, priceCol, px, out);
   });
-  return out;
+  return bad ? null : out;
 }
 
 function appParseSales_(v, base, tz, ph, priceCol, px, out) {
@@ -1143,7 +1147,9 @@ function appSalesOfDay_(day, tz) {
     const px0 = appCols_(getHeaderMap(ps), APP_PH_EXTRA);
     if (!px0.date) ranges = appDayRangesCached_(ps, day, tz);
   } catch (e) { console.error(e); ranges = null; }
-  appReadSales_(ps, tz, ranges).forEach(s => {
+  let sales = appReadSales_(ps, tz, ranges);
+  if (!sales) sales = appReadSales_(ps, tz, appDayRangesCached_(ps, day, tz, true));   // блок сдвинулся — ищем заново
+  sales.forEach(s => {
     if (s.day !== day) return;
     out.rows.push({ cm: s.cm || '', t: times[s.row] || '', row: s.row, s: s.size, n: s.name, q: s.qty, pr: s.price, c: s.cost, m: s.margin, u: logs[s.row] === s.sig, w: s.who, y: s.pay });
     if (appIsWo_(s.pay)) { out.margin += s.margin; return; }
@@ -1159,27 +1165,21 @@ function appSalesOfDay_(day, tz) {
   return out;
 }
 
-// Где в листе блок дня: номер строки заголовка храним в кэше, каждый раз проверяем, что там та же дата.
-// Каждое чтение из большой таблицы стоит ~1 с, поэтому колонку A целиком читаем только если кэш не подошёл.
-function appDayRangesCached_(ps, day, tz) {
+// Где в листе блок дня: {from, n} храним в кэше вместе с числом строк листа. Если лист не рос — берём из кэша,
+// а дату в первой строке блока проверяет appReadSales_ (check). Каждое чтение из большой таблицы стоит ~1 с.
+function appDayRangesCached_(ps, day, tz, noCache) {
   const cache = CacheService.getScriptCache();
   const key = 'PRDAY_' + day;
   const last = ps.getLastRow();
   if (last < DATA_START_ROW) return [];
-  let head = 0;
-  try { head = Number(cache.get(key)) || 0; } catch (e) { head = 0; }
-  if (head >= DATA_START_ROW && head <= last) {
-    const n = Math.min(last - head + 1, 160);
-    const a = ps.getRange(head, 1, n, 1).getValues();
-    if (a[0][0] instanceof Date && appDay_(a[0][0], tz) === day) {
-      let end = -1;
-      for (let i = 1; i < a.length; i++) if (a[i][0] instanceof Date) { end = i; break; }
-      if (end > 0) return [{ from: head, n: end }];
-      if (head + n - 1 >= last) return [{ from: head, n: n }];
-    }
+  if (!noCache) {
+    try {
+      const c = JSON.parse(cache.get(key) || 'null');
+      if (c && c.l === last && c.f >= DATA_START_ROW) return [{ from: c.f, n: c.n, check: day }];
+    } catch (e) { console.error(e); }
   }
   const ranges = appDayRanges_(ps.getRange(DATA_START_ROW, 1, last - DATA_START_ROW + 1, 1).getValues(), day, tz);
-  try { if (ranges.length === 1) cache.put(key, String(ranges[0].from), 21600); } catch (e) { console.error(e); }
+  try { if (ranges.length === 1) cache.put(key, JSON.stringify({ f: ranges[0].from, n: ranges[0].n, l: last }), 21600); } catch (e) { console.error(e); }
   return ranges;
 }
 
