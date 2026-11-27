@@ -22,6 +22,7 @@ const APP_TITLE = 'ШИНМАРТ · Склад';
 const APP_LOG_SHEET = 'APP_ЖУРНАЛ';
 const APP_EXP_SHEET = 'РАСХОДЫ';
 const APP_PAYS = ['нал', 'QR', 'Kaspi', 'рассрочка'];
+const APP_CM = '💬 ';          // начало строки-комментария под продажей в листе ПРОДАЖИ
 function appIsWo_(pay) { return pay === 'СПИСАНИЕ' || pay === 'НЕДОСТАЧА'; }
 function appIsSpecialSup_(sup) { return sup === 'ВОЗВРАТ' || sup === 'ИНВЕНТАРИЗАЦИЯ'; }
 const APP_CACHE_TTL = 120;          // секунд хранить индекс в кэше
@@ -340,8 +341,10 @@ function appCreateDayBlock_(ps, vals, dateStr, tz) {
   return dst;
 }
 
-// Строка для новой продажи: первая пустая в блоке дня; нет места — вставляем внутри блока; нет блока — создаём
-function appPlaceSaleRow_(ps, tz, dateStr) {
+// Строки для новой продажи: count подряд идущих пустых строк в блоке дня; нет места — вставляем внутри блока;
+// нет блока — создаём. Возвращает номер первой строки.
+function appPlaceSaleRow_(ps, tz, dateStr, count) {
+  count = count || 1;
   const last = ps.getLastRow();
   let vals = last >= DATA_START_ROW ? ps.getRange(DATA_START_ROW, 1, last - DATA_START_ROW + 1, 2).getValues() : [];
   let blk = appFindDayBlock_(vals, dateStr, tz);
@@ -351,19 +354,47 @@ function appPlaceSaleRow_(ps, tz, dateStr) {
     blk = appFindDayBlock_(vals, dateStr, tz);
     if (!blk) throw new Error('Не удалось создать блок дня ' + dateStr + ' в листе ' + SHEETS.PRODAJI + '.');
   }
-  for (let r = blk.first; r < blk.sumRow; r++) {
-    const a = vals[r - blk.base][0], b = vals[r - blk.base][1];
-    if (String(a).trim() === '' && String(b).trim() === '') return r;
+  const isFree = r => String(vals[r - blk.base][0]).trim() === '' && String(vals[r - blk.base][1]).trim() === '';
+  // первая строка, с которой идёт нужная пустая серия
+  for (let r = blk.first; r + count - 1 < blk.sumRow; r++) {
+    let ok = true;
+    for (let k = 0; k < count; k++) { if (!isFree(r + k)) { ok = false; break; } }
+    if (ok) return r;
   }
   if (blk.sumRow <= blk.first) throw new Error('В блоке дня ' + dateStr + ' нет строк продаж. Добавьте строку в таблице вручную.');
-  // свободных строк нет: вставляем строку между двумя последними строками блока, суммы дня захватят её
+  // места нет: вставляем count строк перед последней строкой блока, суммы дня захватят их
   const w = ps.getLastColumn();
-  const at = Math.max(blk.first, blk.sumRow - 1);        // новая строка встанет перед последней строкой блока
-  ps.insertRowBefore(at);
-  const src = at + 1;                                     // бывшая последняя строка блока
-  ps.getRange(src, 1, 1, w).copyTo(ps.getRange(at, 1, 1, w), SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
-  ps.getRange(at, 1, 1, 4).clearContent();
+  const at = Math.max(blk.first, blk.sumRow - 1);
+  // образец оформления: обычная (белая) строка продажи ближе к концу блока
+  let tpl = at;
+  for (let r = blk.sumRow - 1, tried = 0; r >= blk.first && tried < 8; r--) {
+    if (String(vals[r - blk.base][0]).trim() === '') continue;
+    tried++;
+    let bg = '#ffffff';
+    try { bg = String(ps.getRange(r, 1).getBackground()).toLowerCase(); } catch (e) { /* оформление не критично */ }
+    if (bg === '#ffffff' || bg === '') { tpl = r; break; }
+  }
+  ps.insertRowsBefore(at, count);
+  const src = tpl >= at ? tpl + count : tpl;               // образец мог сместиться вниз
+  for (let k = 0; k < count; k++) {
+    ps.getRange(src, 1, 1, w).copyTo(ps.getRange(at + k, 1, 1, w), SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
+    ps.getRange(at + k, 1, 1, 4).clearContent();
+  }
   return at;
+}
+
+// Разложить сумму за комплект по позициям пропорционально их ценам; последняя позиция добирает остаток точно
+function appSplitTotal_(items, total) {
+  const base = items.reduce((t, x) => t + x.price * x.qty, 0);
+  if (!(base > 0) || !(total > 0)) throw new Error('Не получилось разложить сумму комплекта.');
+  let left = total;
+  items.forEach((x, i) => {
+    if (i === items.length - 1) { x.price = Math.round(left / x.qty * 100) / 100; return; }
+    const share = total * (x.price * x.qty) / base;
+    const unit = Math.max(100, Math.round(share / x.qty / 100) * 100);
+    x.price = unit; left -= unit * x.qty;
+  });
+  return items;
 }
 
 // Записать значения продажи в строку, не трогая формулы СУММА/СЕБЕС/МАРЖА
@@ -496,6 +527,10 @@ function appUndoSale(p) {
     const key = String(ps.getRange(row, ph.size).getValue()) + '|||' + String(ps.getRange(row, ph.brand).getValue());
     ps.getRange(row, ph.size).clearContent(); ps.getRange(row, ph.brand).clearContent();   // формулы СУММА/СЕБЕС/МАРЖА остаются
     ps.getRange(row, priceCol).clearContent(); ps.getRange(row, ph.qty).clearContent();   // номера других строк не сдвигаются
+    try {   // комментарий под этой продажей (строка с 💬) тоже убираем
+      const nb = String(ps.getRange(row + 1, ph.brand).getValue());
+      if (String(ps.getRange(row + 1, ph.size).getValue()).trim() === '' && nb.indexOf(APP_CM) === 0) ps.getRange(row + 1, ph.brand).clearContent();
+    } catch (e) { console.error(e); }
     recalcFifoForKeys([key]);
     SpreadsheetApp.flush();
     appLogMarkUndone_(logRec.logRow);
@@ -504,6 +539,172 @@ function appUndoSale(p) {
     const idx = appGetIndex_(true);
     return Object.assign({ ok: true }, idx, appTodayPack_(p.date || appToday_()));
   });
+}
+
+// Несколько позиций одной продажей (комплект), общая сумма за комплект и комментарий строкой ниже
+function appAddSaleBatch(p) {
+  return appGuard_(p, true, email => {
+    const ss = getSS_();
+    const tz = ss.getSpreadsheetTimeZone();
+    const raw = (p.items || []).slice(0, 12);
+    if (!raw.length) throw new Error('В продаже нет позиций.');
+    const items = raw.map(x => {
+      const size = normKeyText(x.size || ''), name = normKeyText(x.name || '');
+      const qty = Math.round(appNum_(x.qty)), price = appNum_(x.price);
+      if (!size || !name) throw new Error('Не выбрана позиция.');
+      if (qty <= 0) throw new Error('Количество должно быть больше нуля.');
+      if (price <= 0) throw new Error('Укажите цену для ' + size + '.');
+      return { size: size, name: name, qty: qty, price: price };
+    });
+    const total = appNum_(p.total);
+    if (total > 0) appSplitTotal_(items, total);
+    let comment = String(p.comment || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 200);
+    if (total > 0 && items.length > 1) comment = ('Комплект ' + total + ' ₸' + (comment ? ': ' + comment : ''));
+    const pay = APP_PAYS.indexOf(p.pay) !== -1 ? p.pay : 'нал';
+    const dateStr = /^\d{4}-\d{2}-\d{2}$/.test(p.date || '') ? p.date : appToday_();
+    const dateObj = Utilities.parseDate(dateStr, tz, 'yyyy-MM-dd');
+    const ps = ss.getSheetByName(SHEETS.PRODAJI);
+    const map = getHeaderMap(ps);
+    const ph = resolveCols(map, PRODAJI_HEADERS, SHEETS.PRODAJI, ['size', 'brand', 'qty']);
+    const priceCol = findProdajiPriceCol(ps);
+    if (!priceCol) throw new Error('На листе ' + SHEETS.PRODAJI + ' не найдена колонка ЦЕНА.');
+    const px = appCols_(map, APP_PH_EXTRA);
+    const need = items.length + (comment ? 1 : 0);
+    const r0 = appPlaceSaleRow_(ps, tz, dateStr, need);
+    const rows = [];
+    items.forEach((it, k) => {
+      const r = r0 + k;
+      appWriteSaleCells_(ps, r, ph, priceCol, px, { size: it.size, name: it.name, qty: it.qty, price: it.price, pay: pay }, email, dateObj);
+      appLog_(email, 'ПРОДАЖА', SHEETS.PRODAJI, r, it.size + '|||' + it.name, it.qty, it.price, [it.size, it.name, it.qty, it.price].join('|'));
+      rows.push(r);
+    });
+    if (comment) {
+      const cr = ps.getRange(r0 + items.length, ph.brand);
+      cr.setValue(APP_CM + comment);
+      try { cr.setFontStyle('italic').setFontColor('#5b636f'); } catch (e) { console.error(e); }
+    }
+    try { PropertiesService.getScriptProperties().setProperty('needsRebuild', 'true'); } catch (e) { console.error(e); }
+    return { ok: true, rows: rows, row: rows[0], prices: items.map(x => x.price), fast: true };
+  });
+}
+
+// Правка продажи: цена и/или количество (позицию подтверждаем размером и названием)
+function appEditSale(p) {
+  return appGuard_(p, true, email => {
+    const ss = getSS_();
+    const tz = ss.getSpreadsheetTimeZone();
+    const ps = ss.getSheetByName(SHEETS.PRODAJI);
+    const ph = resolveCols(getHeaderMap(ps), PRODAJI_HEADERS, SHEETS.PRODAJI, ['size', 'brand', 'qty']);
+    const priceCol = findProdajiPriceCol(ps);
+    const row = Math.round(appNum_(p.row));
+    if (row < DATA_START_ROW || row > ps.getLastRow()) throw new Error('Строка продажи не найдена.');
+    const size = String(ps.getRange(row, ph.size).getValue()), name = String(ps.getRange(row, ph.brand).getValue());
+    if (normKeyText(size) !== normKeyText(p.size || '') || normKeyText(name) !== normKeyText(p.name || '')) throw new Error('Строка в таблице изменилась. Обновите приложение.');
+    const qty = Math.round(appNum_(p.qty)), price = appNum_(p.price);
+    if (qty <= 0) throw new Error('Количество должно быть больше нуля.');
+    if (price <= 0) throw new Error('Цена должна быть больше нуля.');
+    const prevQty = ps.getRange(row, ph.qty).getValue(), prevPrice = ps.getRange(row, priceCol).getValue();
+    ps.getRange(row, ph.qty).setValue(qty);
+    ps.getRange(row, priceCol).setValue(price);
+    recalcFifoForKeys([size + '|||' + name]);
+    SpreadsheetApp.flush();
+    appLog_(email, 'ПРАВКА', SHEETS.PRODAJI, row, size + '|||' + name, qty, price, [size, name, qty, price].join('|') );
+    appLog_(email, 'ПРАВКА (было)', SHEETS.PRODAJI, row, size + '|||' + name, prevQty, prevPrice, [size, name, prevQty, prevPrice].join('|'));
+    try { PropertiesService.getScriptProperties().setProperty('needsRebuild', 'true'); } catch (e) { console.error(e); }
+    return Object.assign({ ok: true, row: row }, appGetIndex_(true), appTodayPack_(p.date || appToday_()));
+  });
+}
+
+// Расход дня: строка в блоке дня, красная заливка, белый текст, суммы идут минусом (как «АСЫЛДЫН работа −10 000»)
+function appAddDayExpense(p) {
+  return appGuard_(p, true, email => {
+    opsNeedOwner_(email);
+    const ss = getSS_();
+    const tz = ss.getSpreadsheetTimeZone();
+    const text = String(p.text || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 120);
+    const sum = Math.round(appNum_(p.sum));
+    if (!text) throw new Error('Напишите, на что расход.');
+    if (!(sum > 0)) throw new Error('Сумма расхода должна быть больше нуля.');
+    if (/^[=+\-@]/.test(text)) throw new Error('Текст не должен начинаться со знака = + - @.');
+    const dateStr = /^\d{4}-\d{2}-\d{2}$/.test(p.date || '') ? p.date : appToday_();
+    const ps = ss.getSheetByName(SHEETS.PRODAJI);
+    const map = getHeaderMap(ps);
+    const ph = resolveCols(map, PRODAJI_HEADERS, SHEETS.PRODAJI, ['size', 'brand', 'qty']);
+    const px = appCols_(map, APP_PH_EXTRA);
+    if (!px.sum || !px.sebes || !px.marja) throw new Error('На листе ПРОДАЖИ не найдены колонки СУММА, СЕБЕС, МАРЖА.');
+    const r = appPlaceSaleRow_(ps, tz, dateStr, 1);
+    ps.getRange(r, ph.brand).setValue(text);
+    ps.getRange(r, px.sum).setValue(-sum);
+    ps.getRange(r, px.sebes).setValue(0);
+    ps.getRange(r, px.marja).setValue(-sum);
+    const lastCol = Math.max(px.marja, px.sum, px.sebes, ph.qty);
+    try { ps.getRange(r, 1, 1, lastCol).setBackground('#ea3323').setFontColor('#ffffff').setFontWeight('bold'); } catch (e) { console.error(e); }
+    appLog_(email, 'РАСХОД', SHEETS.PRODAJI, r, text, '', sum, [text, sum, dateStr].join('|'));
+    try { PropertiesService.getScriptProperties().setProperty('needsRebuild', 'true'); } catch (e) { console.error(e); }
+    return Object.assign({ ok: true, row: r }, appTodayPack_(dateStr));
+  });
+}
+
+function appUndoDayExpense(p) {
+  return appGuard_(p, true, email => {
+    opsNeedOwner_(email);
+    const ss = getSS_();
+    const ps = ss.getSheetByName(SHEETS.PRODAJI);
+    const map = getHeaderMap(ps);
+    const ph = resolveCols(map, PRODAJI_HEADERS, SHEETS.PRODAJI, ['size', 'brand', 'qty']);
+    const px = appCols_(map, APP_PH_EXTRA);
+    const row = Math.round(appNum_(p.row));
+    const rec = appLogFind_(SHEETS.PRODAJI, row);
+    if (!rec) throw new Error('Этот расход записали не через приложение. Удалите строку в таблице вручную.');
+    const text = String(ps.getRange(row, ph.brand).getValue());
+    if (rec.sig.indexOf(text + '|') !== 0) throw new Error('Строка в таблице изменилась. Удалите её вручную.');
+    // оформление берём у ближайшей обычной строки продажи выше
+    let fmt = 0;
+    for (let r = row - 1; r >= DATA_START_ROW && r > row - 40; r--) {
+      if (!(ps.getRange(r, ph.qty).getValue() > 0)) continue;
+      let bg = '#ffffff';
+      try { bg = String(ps.getRange(r, 1).getBackground()).toLowerCase(); } catch (e) { /* ок */ }
+      if (bg === '#ffffff') { fmt = r; break; }
+    }
+    ps.getRange(row, ph.brand).clearContent();
+    if (px.sum && px.sebes && px.marja && fmt) {
+      ['sum', 'sebes', 'marja'].forEach(k => {
+        const f = ps.getRange(fmt, px[k]).getFormula();
+        if (f) ps.getRange(row, px[k]).setFormulaR1C1(ps.getRange(fmt, px[k]).getFormulaR1C1());
+        else ps.getRange(row, px[k]).clearContent();
+      });
+      appCopyFormat_(ps, fmt, row);
+    }
+    SpreadsheetApp.flush();
+    appLogMarkUndone_(rec.logRow);
+    appLog_(email, 'ОТМЕНА РАСХОДА', SHEETS.PRODAJI, row, text, '', '', rec.sig);
+    try { PropertiesService.getScriptProperties().setProperty('needsRebuild', 'true'); } catch (e) { console.error(e); }
+    return Object.assign({ ok: true }, appTodayPack_(p.date || appToday_()));
+  });
+}
+
+// Расходы дня, записанные приложением
+function appDayExpenses_(ps, day) {
+  const sh = appLogSheet_();
+  const last = sh.getLastRow();
+  const out = [];
+  if (last < 2) return out;
+  const from = Math.max(2, last - 600);
+  const v = sh.getRange(from, 1, last - from + 1, 10).getValues();
+  const map = {};
+  v.forEach(r => {
+    if (r[3] !== SHEETS.PRODAJI || r[2] !== 'РАСХОД') return;
+    if (r[9]) { delete map[r[4]]; return; }
+    map[r[4]] = { t: r[0], text: String(r[5]), sum: appNum_(r[7]), sig: String(r[8]) };
+  });
+  let tz = 'Asia/Almaty';
+  try { tz = Session.getScriptTimeZone() || tz; } catch (e) { /* в тестах нет */ }
+  Object.keys(map).forEach(k => {
+    const x = map[k];
+    if (x.sig.split('|').pop() !== day) return;
+    out.push({ row: Number(k), text: x.text, sum: x.sum, t: x.t instanceof Date ? Utilities.formatDate(x.t, tz, 'HH:mm') : '' });
+  });
+  return out;
 }
 
 // ----- ПРИХОД -----
@@ -741,6 +942,7 @@ function appReadSales_(ps, tz) {
     const pay0 = px.pay ? String(r[px.pay - 1] || '') : '';
     const margin = appIsWo_(pay0) ? -cost : (px.marja ? appNum_(r[px.marja - 1]) : (price * qty - cost));
     out.push({
+      cm: (i + 1 < v.length && !(v[i + 1][ph.size - 1] instanceof Date) && String(v[i + 1][ph.size - 1]).trim() === '' && String(v[i + 1][ph.brand - 1]).indexOf(APP_CM) === 0) ? String(v[i + 1][ph.brand - 1]).slice(APP_CM.length) : '',
       row: DATA_START_ROW + i, size: size, name: name, qty: qty, price: price, cost: cost, margin: margin,
       ms: ms, day: ds, sig: [r[ph.size - 1], r[ph.brand - 1], r[ph.qty - 1], r[priceCol - 1]].map(String).join('|'),
       who: px.who ? String(r[px.who - 1] || '') : '',
@@ -917,10 +1119,11 @@ function appSalesOfDay_(day, tz) {
   try { times = appLogTimes_(SHEETS.PRODAJI); } catch (e) { console.error(e); }
   appReadSales_(ps, tz).forEach(s => {
     if (s.day !== day) return;
-    out.rows.push({ t: times[s.row] || '', row: s.row, s: s.size, n: s.name, q: s.qty, pr: s.price, c: s.cost, m: s.margin, u: logs[s.row] === s.sig, w: s.who, y: s.pay });
+    out.rows.push({ cm: s.cm || '', t: times[s.row] || '', row: s.row, s: s.size, n: s.name, q: s.qty, pr: s.price, c: s.cost, m: s.margin, u: logs[s.row] === s.sig, w: s.who, y: s.pay });
     if (appIsWo_(s.pay)) { out.margin += s.margin; return; }
     out.qty += s.qty; out.sum += s.price * s.qty; out.cost += s.cost; out.margin += s.margin;
   });
+  try { out.exp = appDayExpenses_(ps, day); out.expSum = out.exp.reduce((t, x) => t + x.sum, 0); } catch (e) { out.exp = []; out.expSum = 0; console.error(e); }
   try {
     appReturns_(day, day, tz).forEach(x => {
       out.rows.push({ row: x.row, s: x.size, n: x.name, q: x.q, pr: x.q ? x.refund / x.q : 0, c: x.cost, m: -(x.refund - x.cost), u: x.u, w: '', y: 'ВОЗВРАТ', ret: 1 });
@@ -1170,7 +1373,7 @@ function appLogMap_(sheetName) {
   const from = Math.max(2, last - 400);
   const v = sh.getRange(from, 1, last - from + 1, 10).getValues();
   v.forEach(r => {
-    if (r[3] !== sheetName || (r[2] !== 'ПРОДАЖА' && r[2] !== 'ПРИХОД' && r[2] !== 'РАСХОД')) return;
+    if (r[3] !== sheetName || (r[2] !== 'ПРОДАЖА' && r[2] !== 'ПРИХОД' && r[2] !== 'РАСХОД' && r[2] !== 'ПРАВКА')) return;
     if (r[9]) { delete map[r[4]]; return; }
     map[r[4]] = String(r[8]);
   });
@@ -1202,7 +1405,7 @@ function appLogFind_(sheetName, row) {
   const v = sh.getRange(from, 1, last - from + 1, 10).getValues();
   for (let i = v.length - 1; i >= 0; i--) {
     const r = v[i];
-    if (r[3] === sheetName && Number(r[4]) === row && (r[2] === 'ПРОДАЖА' || r[2] === 'ПРИХОД' || r[2] === 'РАСХОД')) {
+    if (r[3] === sheetName && Number(r[4]) === row && (r[2] === 'ПРОДАЖА' || r[2] === 'ПРИХОД' || r[2] === 'РАСХОД' || r[2] === 'ПРАВКА')) {
       if (r[9]) return null;
       return { logRow: from + i, sig: String(r[8]) };
     }

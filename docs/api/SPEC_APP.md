@@ -16,6 +16,10 @@
 | `appAddSale` | `size,name,qty,price,pay,date,reqId` | `row`, индекс | все |
 | `appFinishSale` | `keys,rows,date` | индекс (пересчёт FIFO) | все |
 | `appUndoSale` | `row,date,reqId` | индекс | все |
+| `appAddSaleBatch` | `items[≤12]{size,name,qty,price},total,comment,pay,date,reqId` | `rows,row,prices` | все |
+| `appEditSale` | `row,date,qty,price` (размер/название не меняются) | индекс + итог дня | все |
+| `appAddDayExpense` | `text,sum,date,reqId` — красная строка в дне | `row` | владелец |
+| `appUndoDayExpense` | `row,date` | итог дня | владелец |
 | `appAddPurchase` / `appUndoPurchase` | см. код | индекс | все |
 | `appAddReturn`, `appAddWriteoff`, `appApplyInventory` | см. код | индекс | все |
 | `appStats` | `from,to` | итоги за период | owner |

@@ -8,6 +8,7 @@ const sh = {
   getName: () => 'ПРОДАЖИ', getMaxRows: () => 500, getLastColumn: () => W, insertRowsAfter() {},
   getLastRow() { let n = g.length; while (n > 0 && !(g[n - 1] || []).some(x => x && (x.v !== '' || x.f))) n--; return n; },
   insertRowBefore(r) { g.splice(r - 1, 0, []); },
+  insertRowsBefore(r, n) { for (let i = 0; i < n; i++) g.splice(r - 1, 0, []); },
   getRange(r, c, nr = 1, nc = 1) {
     return {
       getValues() { const o = []; for (let i = 0; i < nr; i++) { const a = []; for (let j = 0; j < nc; j++) a.push(cell(r + i, c + j).v); o.push(a); } return o; },
@@ -56,3 +57,22 @@ const head = cell(n - 1, 1).v;
 ok(head instanceof Date && head.getDate() === 27, 'создан блок 27.11, заголовок над строкой ' + n);
 ok(cell(n, 1).v === '' && cell(n, 6).f !== '', 'строка продажи пустая, формулы на месте');
 ok(appFindDayBlock_(sh.getRange(4, 1, sh.getLastRow() - 3, 2).getValues(), '2026-11-27', tz) !== null, 'новый блок находится');
+
+// --- несколько строк подряд (комплект + комментарий) ---
+g = [[], [], []];
+row(4, [D('2026-11-25'), 'ср']);
+row(5, ['215/65/16', 'ШАОЯНГ', 35900, 2], true);
+row(6, ['', '', '', ''], true);
+row(7, ['', '', '', ''], true);
+row(8, ['процентное соотношение дня к обороту', '', 23.5, 90]);
+ok(appPlaceSaleRow_(sh, tz, '2026-11-25', 2) === 6, 'нужно 2 строки: пустая серия 6-7');
+cell(7, 2).v = 'занято';
+const r3 = appPlaceSaleRow_(sh, tz, '2026-11-25', 3);
+ok(r3 === 7 && g[r3 - 1] !== undefined && /^процент/.test(cell(7 + 3 + 1, 1).v), 'серии 3 нет: вставлено 3 строки внутри блока, итоги сдвинулись, row=' + r3 + ' итог=' + cell(11, 1).v);
+// --- сумма за комплект ---
+const it = appSplitTotal_([{ price: 40900, qty: 4 }, { price: 25000, qty: 2 }], 200000);
+ok(Math.abs(it[0].price * 4 + it[1].price * 2 - 200000) < 0.01, 'сумма комплекта сходится ровно: ' + it[0].price + ' / ' + it[1].price);
+const it2 = appSplitTotal_([{ price: 80000, qty: 4 }], 320000);
+ok(it2[0].price === 80000, 'одна позиция: 320000 / 4 = 80000');
+const it3 = appSplitTotal_([{ price: 40000, qty: 4 }, { price: 40000, qty: 4 }], 320000);
+ok(it3[0].price * 4 + it3[1].price * 4 === 320000 && it3[0].price === 40000, 'две одинаковые позиции по 4 шт на 320 000');
