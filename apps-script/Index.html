@@ -309,7 +309,9 @@ body.seller .tabbar [data-go=abc]{display:none}
 .cin{display:flex;gap:6px;align-items:center;margin-top:6px;font-size:13px;color:var(--ink2)}
 .cin .inp{height:38px;width:76px;padding:0 8px;font-size:15px}
 .cx{width:34px;height:34px;font-size:22px;color:var(--ink3)}
-@media (min-width:1000px){.cartbar{left:calc(var(--side) + 24px);right:24px;bottom:20px}}
+body.hascart .toast{bottom:calc(var(--nav) + env(safe-area-inset-bottom) + 78px)}
+.ctot{display:flex;justify-content:space-between;align-items:baseline;font-size:14px;color:var(--ink2);margin:0 0 12px}.ctot b{font-size:20px;color:var(--ink)}
+@media (min-width:1000px){body.hascart .toast{bottom:84px}.cartbar{left:calc(var(--side) + 24px);right:24px;bottom:20px}}
 @media (min-width:1000px){
   :root{--col:1520px;--side:244px;--nav:0px}
   .app{display:grid;grid-template-columns:var(--side) minmax(0,1fr);grid-template-rows:auto auto auto 1fr;align-items:start}
@@ -528,7 +530,7 @@ var TAG_URL='https://script.google.com/macros/s/AKfycbw9-w1jUj7-7UP8e-0qUMDbp4_d
 var S={
   items:[], meta:{}, tab:'sales', q:'', type:'', hist:false, flt:'', idle:60, cover:45, limit:120,
   minMargin:+(lsGet('shm_minm')||5000), lastQty:+(lsGet('shm_lastqty')||4),
-  sales:null, purchases:[], busy:false, salesDay:todayISO(),
+  sales:null, dayC:{}, purchases:[], busy:false, salesDay:todayISO(),
   sale:{it:null,qty:4,price:'',date:todayISO(),rid:rid(),confirm:false},
   buy:{mode:'old',it:null,sup:'',supOther:false,tip:'ШИПЫ',cur:'KZT',rid:rid()},
   page:'', stats:null, per:'today', stFrom:'', stTo:'', abc:null, abcDays:90
@@ -617,12 +619,54 @@ function ask(text,okLabel){
 /* ---------- загрузка ---------- */
 function applyData(r){
   if(r.items){ S.items=r.items; S.meta=r.meta||{}; }
-  if(r.sales && (!r.sales.date || r.sales.date===S.salesDay)) S.sales=r.sales;
+  if(r.sales){
+    // продажи, которые ещё пишутся (нет номера строки), не теряем при свежем ответе сервера
+    var keep=(S.sales&&S.sales.date===r.sales.date&&S.sales.rows||[]).filter(function(x){ return x.pend&&!x.row; });
+    if(keep.length){ r.sales.rows=(r.sales.rows||[]).concat(keep); recalcSales(r.sales); }
+    if(r.sales.date) S.dayC[r.sales.date]=r.sales;
+    if(!r.sales.date || r.sales.date===S.salesDay) S.sales=r.sales;
+  }
   if(r.purchases) S.purchases=r.purchases;
   if(r.dump) S.dump=r.dump;
 }
 function saveCache(){ lsSet('shm_idx_v2',JSON.stringify({items:S.items,meta:S.meta,sales:S.sales,purchases:S.purchases})); }
 var loadTries=0;
+// итоги дня по строкам (после правок в телефоне, пока сервер не ответил)
+function recalcSales(s){
+  var q=0,sum=0,m=0;
+  (s.rows||[]).forEach(function(r){
+    if(r.ret){ q-=r.q; sum-=r.pr*r.q; m+=(r.m||0); return; }
+    if(r.y==='СПИСАНИЕ'||r.y==='НЕДОСТАЧА'){ m+=(r.m||0); return; }
+    q+=r.q; sum+=r.q*r.pr; m+=(r.m||0);
+  });
+  s.qty=q; s.sum=sum; s.margin=m;
+  s.expSum=(s.exp||[]).reduce(function(t,x){ return t+x.sum; },0);
+}
+function itemOf(sz,nm){
+  sz=String(sz).toUpperCase(); nm=String(nm).toUpperCase();
+  for(var i=0;i<S.items.length;i++){ var it=S.items[i]; if(String(it.s).toUpperCase()===sz&&String(it.n).toUpperCase()===nm) return it; }
+  return null;
+}
+// отмена продаж: сразу убираем у себя и возвращаем остаток, сервер — в фоне; ошибка — всё назад
+function undoSaleRows(rowNums,date,stock,okMsg){
+  var s=S.dayC[date]||(S.sales&&S.sales.date===date?S.sales:null), removed=[];
+  if(s){ s.rows=(s.rows||[]).filter(function(r){ if(!r.ret&&rowNums.indexOf(r.row)>=0){ removed.push(r); return false; } return true; }); recalcSales(s); }
+  var back=stock||removed.map(function(r){ return {s:r.s,n:r.n,q:r.q}; });
+  back.forEach(function(b){ var it=itemOf(b.s,b.n); if(it) it.o=(it.o||0)+b.q; });
+  saveCache(); renderAll(); toast('Отменяю…','',{ms:60000});
+  var chain=Promise.resolve(), last=null;
+  rowNums.slice().sort(function(a,b){ return b-a; }).forEach(function(rw){
+    chain=chain.then(function(){ return run('appUndoSale',{reqId:rid(),row:rw,date:date}).then(function(x){ last=x; }); });
+  });
+  return chain.then(function(){ if(last) applyData(last); saveCache(); renderAll(); toast(okMsg||'Продажа отменена'); })
+    .catch(function(e){
+      back.forEach(function(b){ var it=itemOf(b.s,b.n); if(it) it.o=Math.max(0,(it.o||0)-b.q); });
+      if(s){ s.rows=s.rows.concat(removed); recalcSales(s); }
+      saveCache(); renderAll(); toast('Не отменилось',e.message,{err:true});
+      refreshDay(date);
+    });
+}
+function refreshDay(date){ run('appGetSales',{date:date}).then(function(r){ applyData(r); renderSales(); }).catch(function(){}); }
 function loadOps(){
   run('appOpsInit',{}).then(function(o){
     S.ops=o; document.body.classList.toggle('seller',o.role==='seller');
@@ -809,23 +853,25 @@ function doSale(){
   // сразу показываем продажу у себя и закрываем окно: сервер дописывает таблицу в фоне
   S.lastQty=qty; lsSet('shm_lastqty',String(qty));
   S.salesDay=date; $('salesDate').value=date;
+  if(!S.sales||S.sales.date!==date) S.sales=S.dayC[date]||null;
   it.o=Math.max(0,(it.o||0)-qty);
   var pend={row:0,s:it.s,n:it.n,q:qty,pr:price,c:0,m:0,u:false,w:'',y:pay,pend:1,t:nowHM()};
-  var inDay=S.sales&&S.sales.rows&&(!S.sales.date||S.sales.date===date);
-  if(inDay){ S.sales.rows.push(pend); S.sales.qty=(S.sales.qty||0)+qty; S.sales.sum=(S.sales.sum||0)+qty*price; }
+  var inDay=!!(S.sales&&S.sales.date===date);
+  if(inDay){ S.sales.rows=(S.sales.rows||[]).concat([pend]); recalcSales(S.sales); }
+  else refreshDay(date);
   closeSheet(); $('sq').value=''; saleSug(); renderAll();
   toast('Записываю '+qty+' × '+it.s, money(price*qty),{ms:60000});
   run('appAddSale',{reqId:rid0,size:it.s,name:it.n,qty:qty,price:price,pay:pay,date:date,fast:1}).then(function(r){
-    pend.row=r.row; pend.u=true; pend.pend=0; saveCache(); renderSales();
+    pend.row=r.row; pend.u=true; pend.pend=0; if(inDay) recalcSales(S.sales); saveCache(); renderSales();
+    if(!inDay) refreshDay(date);
     var row=r.row;
     toast('Продано '+qty+' × '+it.s, money(price*qty),{label:'Отменить',ms:9000,fn:function(){
-      run('appUndoSale',{reqId:rid(),row:row,date:date}).then(function(x){ applyData(x); saveCache(); renderAll(); toast('Продажа отменена'); })
-        .catch(function(e){ toast('Не отменилось',e.message,{err:true}); });
+      undoSaleRows([row],date,inDay?null:[{s:it.s,n:it.n,q:qty}]);
     }});
     queueFinish(it,row,date);
   }).catch(function(e){
     it.o+=qty;
-    if(inDay){ var ix=S.sales.rows.indexOf(pend); if(ix>=0) S.sales.rows.splice(ix,1); S.sales.qty-=qty; S.sales.sum-=qty*price; }
+    if(inDay){ S.sales.rows=S.sales.rows.filter(function(x){ return x!==pend; }); recalcSales(S.sales); }
     saveCache(); renderAll();
     toast('Не записано',e.message,{err:true});
   });
@@ -840,14 +886,15 @@ function queueFinish(it,row,date){
 function flushFinish(){
   if(!finQ) return; var q=finQ; finQ=null;
   var keys=Object.keys(q.keys).map(function(k){ return q.keys[k]; });
-  run('appFinishSale',{keys:keys,rows:q.rows,date:q.date}).then(function(x){ if(S.sales&&S.sales.rows&&S.sales.rows.some(function(r){ return r.pend; })) return; applyData(x); saveCache(); renderSales(); renderDump(); })
+  run('appFinishSale',{keys:keys,rows:q.rows,date:q.date}).then(function(x){ applyData(x); saveCache(); renderSales(); renderDump(); })
     .catch(function(){ /* подтянется при следующем обновлении */ });
 }
 var hiddenAt=0;
+function pendingAny(){ return !!(S.sales&&S.sales.rows&&S.sales.rows.some(function(r){ return r.pend; })); }
 document.addEventListener('visibilitychange',function(){
   if(document.hidden){ hiddenAt=Date.now(); flushFinish(); return; }
   // вернулись в приложение: правки, сделанные руками в таблице, подтягиваем сами
-  if(hiddenAt&&Date.now()-hiddenAt>45000&&!S.busy&&!finQ){ load(true); }
+  if(hiddenAt&&Date.now()-hiddenAt>90000&&!S.busy&&!finQ&&!pendingAny()){ load(false); }
   hiddenAt=0;
 });
 $('sheet').addEventListener('click',function(e){
@@ -868,8 +915,7 @@ $('sheet').addEventListener('click',function(e){
       run('appAddWriteoff',{reqId:rid(),size:it.s,name:it.n,qty:wq,date:todayISO()}).then(function(r){
         applyData(r); saveCache(); closeSheet(); renderAll();
         toast('Списано '+wq+' × '+it.s,'Убыток '+fm(-(r.margin||0))+' ₸',{label:'Отменить',ms:9000,fn:function(){
-          run('appUndoSale',{reqId:rid(),row:r.row,date:todayISO()}).then(function(x){ applyData(x); saveCache(); renderAll(); toast('Списание отменено'); })
-            .catch(function(e){ toast('Не отменилось',e.message,{err:true}); });
+          undoSaleRows([r.row],todayISO(),null,'Списание отменено');
         }});
       }).catch(function(e){ toast('Не записано',e.message,{err:true}); });
     });
@@ -891,6 +937,7 @@ var cart=[];
 function cartSum(){ return cart.reduce(function(t,l){ return t+l.qty*l.price; },0); }
 function renderCartBar(){
   var el=$('cartBar'); if(!el) return;
+  document.body.classList.toggle('hascart',cart.length>0);
   if(!cart.length){ el.className='cartbar hidden'; el.innerHTML=''; return; }
   el.className='cartbar';
   el.innerHTML='<button id="cartOpen"><b>Комплект · '+cart.length+' поз.</b><span>'+money(cartSum())+'</span></button><button class="x2" id="cartClr" aria-label="Очистить комплект">×</button>';
@@ -912,7 +959,8 @@ function openCart(){
     h+='</div><div class="lbl" style="margin-top:10px">Сумма за весь комплект, ₸ <span style="font-weight:400;color:var(--ink3)">(если договорились)</span></div>'+
       '<input class="inp" id="cTot" inputmode="numeric" placeholder="'+Math.round(cartSum())+'" style="margin-bottom:10px">'+
       '<div class="lbl">Комментарий</div><input class="inp" id="cCom" maxlength="200" placeholder="не обязательно" style="margin-bottom:12px">'+
-      '<div class="b2"><button class="btn" id="cBack">Добавить ещё</button><button class="btn pri" id="cGo">Продать · <span id="cSum">'+money(cartSum())+'</span></button></div></div>';
+      '<div class="ctot">Итого <b id="cSum">'+money(cartSum())+'</b></div>'+
+      '<div class="b2"><button class="btn" id="cBack">Добавить ещё</button><button class="btn pri" id="cGo">Продать</button></div></div>';
     d.innerHTML=h;
   }
   function upd(){ var t=num(d.querySelector('#cTot').value); d.querySelector('#cSum').textContent=money(t>0?t:cartSum()); }
@@ -940,23 +988,26 @@ function openCart(){
 function sellLines(lines,total,com,pay,date){
   lines.forEach(function(l){ l.it.o=Math.max(0,(l.it.o||0)-l.qty); });
   S.salesDay=date; $('salesDate').value=date;
-  closeSheet(); $('sq').value=''; saleSug(); renderHot(); renderAll();
+  if(!S.sales||S.sales.date!==date) S.sales=S.dayC[date]||null;
+  var inDay=!!(S.sales&&S.sales.date===date);
+  var tot0=lines.reduce(function(t,l){ return t+l.qty*l.price; },0);
+  var pends=lines.map(function(l,i){ return {row:0,s:l.it.s,n:l.it.n,q:l.qty,pr:(total>0&&tot0>0)?Math.round(l.price*total/tot0):l.price,c:0,m:0,u:false,w:'',y:pay,pend:1,t:nowHM(),cm:(i===lines.length-1?com:'')}; });
+  if(inDay){ S.sales.rows=(S.sales.rows||[]).concat(pends); recalcSales(S.sales); }
+  closeSheet(); $('sq').value=''; saleSug(); renderAll();
   var sumTxt=money(total>0?total:lines.reduce(function(t,l){ return t+l.qty*l.price; },0));
   toast('Записываю '+(lines.length>1?lines.length+' поз.':lines[0].qty+' × '+lines[0].it.s),sumTxt,{ms:60000});
   run('appAddSaleBatch',{reqId:rid(),items:lines.map(function(l){ return {size:l.it.s,name:l.it.n,qty:l.qty,price:l.price}; }),total:total,comment:com,pay:pay,date:date}).then(function(r){
     var rows=r.rows||[];
-    if(S.sales&&S.sales.rows&&(!S.sales.date||S.sales.date===date)){
-      lines.forEach(function(l,i){ var pr=(r.prices&&r.prices[i])||l.price; S.sales.rows.push({row:rows[i],s:l.it.s,n:l.it.n,q:l.qty,pr:pr,c:0,m:0,u:true,w:'',y:pay,t:nowHM(),cm:(i===lines.length-1?com:'')}); S.sales.qty=(S.sales.qty||0)+l.qty; S.sales.sum=(S.sales.sum||0)+l.qty*pr; });
-    }
-    saveCache(); renderAll();
+    pends.forEach(function(x,i){ x.row=rows[i]; x.pr=(r.prices&&r.prices[i])||x.pr; x.u=true; x.pend=0; });
+    if(inDay) recalcSales(S.sales);
+    saveCache(); renderSales();
     toast('Продано: '+(lines.length>1?lines.length+' поз.':lines[0].qty+' × '+lines[0].it.s),sumTxt,{label:'Отменить',ms:9000,fn:function(){
-      var chain=Promise.resolve();
-      rows.slice().reverse().forEach(function(rw){ chain=chain.then(function(){ return run('appUndoSale',{reqId:rid(),row:rw,date:date}); }); });
-      chain.then(function(x){ applyData(x); saveCache(); renderAll(); toast('Продажа отменена'); }).catch(function(e){ toast('Не отменилось',e.message,{err:true}); });
+      undoSaleRows(rows,date,inDay?null:lines.map(function(l){ return {s:l.it.s,n:l.it.n,q:l.qty}; }));
     }});
     lines.forEach(function(l,i){ queueFinish(l.it,rows[i],date); });
   }).catch(function(e){
     lines.forEach(function(l){ l.it.o+=l.qty; });
+    if(inDay){ S.sales.rows=S.sales.rows.filter(function(x){ return pends.indexOf(x)<0; }); recalcSales(S.sales); }
     saveCache(); renderAll();
     toast('Не записано',e.message,{err:true});
   });
@@ -1022,7 +1073,8 @@ function opHtml(r,flat){
   else{
     if(r.u) btns+='<button class="undo" data-row="'+r.row+'">Отменить</button>';
     if(!wo&&r.row&&!r.pend) btns+='<button class="undo lnkb" data-act="edit" data-row="'+r.row+'">Изменить</button>';
-    if(!wo) btns+='<button class="undo lnkb" data-act="ret" data-row="'+r.row+'">Вернуть</button>';
+    if(!wo&&r.row&&!r.pend) btns+='<button class="undo lnkb" data-act="ret" data-row="'+r.row+'">Вернуть</button>';
+    if(r.pend) btns='<span class="tm">записываю…</span>';
   }
   var right=wo?'<div class="r">без оплаты<small class="secret neg">убыток '+money(-r.m)+'</small></div>':
     rt?'<div class="r">−'+money(r.pr*r.q)+'</div>':
@@ -1065,7 +1117,7 @@ function renderSales(){
   if(exps.length){
     h+='<div class="h2 owner">Расходы · '+money(exps.reduce(function(t,x){ return t+x.sum; },0))+'</div>';
     exps.forEach(function(x){
-      h+='<div class="op expo owner"><div class="l"><b>'+esc(x.text)+'</b>'+(x.t?'<div class="m"><span class="tm">'+esc(x.t)+'</span></div>':'')+'<div class="btns"><button class="undo" data-act="uexp" data-row="'+x.row+'">Отменить</button></div></div><div class="r">−'+money(x.sum)+'</div></div>';
+      h+='<div class="op expo owner"><div class="l"><b>'+esc(x.text)+'</b>'+(x.t?'<div class="m"><span class="tm">'+esc(x.t)+'</span></div>':'')+(x.pend?'<div class="m">записываю…</div>':'<div class="btns"><button class="undo" data-act="uexp" data-row="'+x.row+'">Отменить</button></div>')+'</div><div class="r">−'+money(x.sum)+'</div></div>';
     });
   }
   el.innerHTML=h;
@@ -1073,8 +1125,8 @@ function renderSales(){
 function setSalesDay(iso){
   S.salesDay=iso; $('salesDate').value=iso;
   renderStrip();
-  S.sales=null; renderSales();
-  run('appGetSales',{date:iso}).then(function(r){ if(iso===S.salesDay){ S.sales=r.sales; renderSales(); } }).catch(function(e){ toast('Не загрузилось',e.message,{err:true}); });
+  S.sales=S.dayC[iso]||null; renderSales();
+  run('appGetSales',{date:iso}).then(function(r){ applyData(r); if(iso===S.salesDay) renderSales(); }).catch(function(e){ if(iso===S.salesDay&&!S.sales) $('salesBody').innerHTML='<div class="banner">Не загрузилось: '+esc(e.message)+'</div>'; else toast('Не загрузилось',e.message,{err:true}); });
 }
 $('dstrip').addEventListener('click',function(e){ var b=e.target.closest('button'); if(!b) return;
   if(b.hasAttribute('data-cal')){ var di=$('salesDate'); try{ if(di.showPicker) di.showPicker(); else di.click(); }catch(er){ di.click(); } return; }
@@ -1096,8 +1148,9 @@ $('salesBody').addEventListener('click',function(e){
   }
   if(!b.classList.contains('sure')){ b.classList.add('sure'); b.textContent='Точно отменить?'; setTimeout(function(){ if(b.parentNode){ b.classList.remove('sure'); b.textContent='Отменить'; } },4000); return; }
   if(act==='uexp'){
-    run('appUndoDayExpense',{reqId:rid(),row:row,date:S.salesDay}).then(function(r){ applyData(r); saveCache(); renderAll(); toast('Расход отменён'); })
-      .catch(function(er){ toast('Не отменилось',er.message,{err:true}); });
+    var sd=S.sales, ex=null; sd.exp=(sd.exp||[]).filter(function(x){ if(x.row===row){ ex=x; return false; } return true; }); recalcSales(sd); renderSales();
+    run('appUndoDayExpense',{reqId:rid(),row:row,date:sd.date}).then(function(r){ applyData(r); saveCache(); renderSales(); toast('Расход отменён'); })
+      .catch(function(er){ if(ex){ sd.exp.push(ex); recalcSales(sd); renderSales(); } toast('Не отменилось',er.message,{err:true}); });
     return;
   }
   if(b.hasAttribute('data-ret')){
@@ -1105,8 +1158,8 @@ $('salesBody').addEventListener('click',function(e){
       .catch(function(er){ toast('Не отменилось',er.message,{err:true}); });
     return;
   }
-  run('appUndoSale',{reqId:rid(),row:row,date:S.salesDay}).then(function(r){ applyData(r); saveCache(); renderAll(); toast('Запись отменена'); })
-    .catch(function(er){ toast('Не отменилось',er.message,{err:true}); });
+  if(!row) return;
+  undoSaleRows([row],S.salesDay,null,'Запись отменена');
 });
 function editDialog(r){
   var d=document.createElement('div'); d.className='dlg';
@@ -1120,10 +1173,15 @@ function editDialog(r){
   d.querySelector('#edY').onclick=function(){
     var q=Math.round(num(d.querySelector('#edQ').value)), pr=num(d.querySelector('#edP').value);
     if(!(q>0)||!(pr>0)){ toast('Проверьте поля','Штуки и цена больше нуля',{err:true}); return; }
-    var btn=d.querySelector('#edY'); btn.textContent='Записываю…'; btn.disabled=true;
-    run('appEditSale',{reqId:rid(),row:r.row,size:r.s,name:r.n,qty:q,price:pr,date:S.salesDay}).then(function(x){
-      document.body.removeChild(d); applyData(x); saveCache(); renderAll(); toast('Продажа изменена',q+' × '+fm(pr)+' ₸');
-    }).catch(function(er){ document.body.removeChild(d); toast('Не изменилось',er.message,{err:true}); });
+    var old={q:r.q,pr:r.pr,m:r.m}, it=itemOf(r.s,r.n), day=S.salesDay, sd=S.sales;
+    r.q=q; r.pr=pr; r.m=(old.m||0)+(q*pr-old.q*old.pr); if(it) it.o=Math.max(0,(it.o||0)-(q-old.q));
+    recalcSales(sd); document.body.removeChild(d); saveCache(); renderAll(); toast('Сохраняю…',q+' × '+fm(pr)+' ₸',{ms:60000});
+    run('appEditSale',{reqId:rid(),row:r.row,size:r.s,name:r.n,qty:q,price:pr,date:day}).then(function(x){
+      applyData(x); saveCache(); renderAll(); toast('Продажа изменена',q+' × '+fm(pr)+' ₸');
+    }).catch(function(er){
+      r.q=old.q; r.pr=old.pr; r.m=old.m; if(it) it.o=(it.o||0)+(q-old.q); recalcSales(sd); saveCache(); renderAll();
+      toast('Не изменилось',er.message,{err:true});
+    });
   };
 }
 function expenseDialog(){
@@ -1138,10 +1196,12 @@ function expenseDialog(){
   d.querySelector('#exY').onclick=function(){
     var t=d.querySelector('#exT').value.trim(), sm=Math.round(num(d.querySelector('#exS').value));
     if(!t||!(sm>0)){ toast('Проверьте поля','Название и сумма больше нуля',{err:true}); return; }
-    var btn=d.querySelector('#exY'); btn.textContent='Записываю…'; btn.disabled=true;
+    var sd=S.sales, pe={row:0,text:t,sum:sm,t:nowHM(),pend:1};
+    if(sd){ sd.exp=(sd.exp||[]).concat([pe]); recalcSales(sd); }
+    document.body.removeChild(d); renderSales(); toast('Записываю расход',t+' −'+fm(sm)+' ₸',{ms:60000});
     run('appAddDayExpense',{reqId:rid(),text:t,sum:sm,date:S.salesDay}).then(function(x){
-      document.body.removeChild(d); applyData(x); saveCache(); renderAll(); toast('Расход записан',t+' −'+fm(sm)+' ₸');
-    }).catch(function(er){ document.body.removeChild(d); toast('Не записано',er.message,{err:true}); });
+      applyData(x); saveCache(); renderSales(); toast('Расход записан',t+' −'+fm(sm)+' ₸');
+    }).catch(function(er){ if(sd){ sd.exp=sd.exp.filter(function(x){ return x!==pe; }); recalcSales(sd); renderSales(); } toast('Не записано',er.message,{err:true}); });
   };
 }
 $('btnExp').onclick=expenseDialog;
@@ -1756,7 +1816,7 @@ $('salesDate').value=S.salesDay; $('buyDate').value=todayISO();
 setHide(lsGet('shm_hide')==='1');
 try{
   var c=JSON.parse(lsGet('shm_idx_v2')||'null');
-  if(c&&c.items&&c.items.length){ S.items=c.items; S.meta=c.meta||{}; S.sales=c.sales||null; S.purchases=c.purchases||[]; }
+  if(c&&c.items&&c.items.length){ S.items=c.items; S.meta=c.meta||{}; S.sales=c.sales||null; S.purchases=c.purchases||[]; if(S.sales&&S.sales.date){ S.sales.rows=(S.sales.rows||[]).filter(function(x){ return !x.pend; }); S.dayC[S.sales.date]=S.sales; } }
 }catch(e){}
 renderAll();
 load(false);

@@ -76,3 +76,12 @@ const it2 = appSplitTotal_([{ price: 80000, qty: 4 }], 320000);
 ok(it2[0].price === 80000, 'одна позиция: 320000 / 4 = 80000');
 const it3 = appSplitTotal_([{ price: 40000, qty: 4 }, { price: 40000, qty: 4 }], 320000);
 ok(it3[0].price * 4 + it3[1].price * 4 === 320000 && it3[0].price === 40000, 'две одинаковые позиции по 4 шт на 320 000');
+
+// Чтение только блоков нужного дня (ускорение журнала дня)
+{
+  const colA = [[D('2026-11-25')], ['a'], ['b'], ['процентное'], [D('2026-11-26')], ['c'], [''], [D('2026-11-25')], ['d']];
+  const r = appDayRanges_(colA, '2026-11-25', 'Asia/Almaty');
+  ok(r.length === 2 && r[0].from === 4 && r[0].n === 4 && r[1].from === 11 && r[1].n === 2, 'блоки 25.11: два куска, хвост листа учтён ' + JSON.stringify(r));
+  ok(JSON.stringify(appDayRanges_(colA, '2026-11-26', 'x')) === JSON.stringify([{ from: 8, n: 3 }]), 'блок 26.11: от заголовка до следующего');
+  ok(appDayRanges_(colA, '2026-11-27', 'x').length === 0, 'нет дня — пусто');
+}

@@ -25,7 +25,7 @@ const APP_PAYS = ['нал', 'QR', 'Kaspi', 'рассрочка'];
 const APP_CM = '💬 ';          // начало строки-комментария под продажей в листе ПРОДАЖИ
 function appIsWo_(pay) { return pay === 'СПИСАНИЕ' || pay === 'НЕДОСТАЧА'; }
 function appIsSpecialSup_(sup) { return sup === 'ВОЗВРАТ' || sup === 'ИНВЕНТАРИЗАЦИЯ'; }
-const APP_CACHE_TTL = 120;          // секунд хранить индекс в кэше
+const APP_CACHE_TTL = 1800;         // секунд хранить индекс в кэше (запись из приложения и правка руками его сбрасывают)
 const APP_CHUNK = 80000;            // лимит кэша — 100 КБ на ключ
 const APP_DEFAULT_MARKUP = 0.335;
 
@@ -106,6 +106,7 @@ function appGuard_(p, write, fn) {
       cache.put(idemKey, 'PENDING', 120);
     }
     let res;
+    APP_LOG_MEMO_ = null; APP_IDX_FRESH_ = false;
     if (write) {
       const lock = LockService.getScriptLock();
       if (!lock.tryLock(20000)) {
@@ -113,6 +114,8 @@ function appGuard_(p, write, fn) {
         return { ok: false, error: 'Таблица занята другой записью. Повторите через несколько секунд.' };
       }
       try { res = fn(email); } finally { lock.releaseLock(); }
+      // запись поменяла таблицу: индекс остатков в кэше устарел (если его уже не пересобрали в этом запросе)
+      if (!APP_IDX_FRESH_) { try { cache.remove('APPIDX_meta'); } catch (eC) { console.error(eC); } }
     } else {
       res = fn(email);
     }
@@ -307,6 +310,18 @@ function appFindDayBlock_(vals, dateStr, tz) {
     return { head: DATA_START_ROW + i, first: DATA_START_ROW + i + 1, sumRow: DATA_START_ROW + sum, vals: vals, base: DATA_START_ROW };
   }
   return null;
+}
+
+// Строки блоков дня по колонке A: [{from, n}] (от заголовка с датой до следующего заголовка)
+function appDayRanges_(colA, dateStr, tz) {
+  const out = [];
+  let start = -1;
+  for (let i = 0; i <= colA.length; i++) {
+    const isHead = i < colA.length && colA[i][0] instanceof Date;
+    if ((isHead || i === colA.length) && start >= 0) { out.push({ from: DATA_START_ROW + start, n: i - start }); start = -1; }
+    if (isHead && appDay_(colA[i][0], tz) === dateStr) start = i;
+  }
+  return out;
 }
 
 // Создать блок нового дня по образцу последнего: заголовок, пустые строки продаж, итоговые строки с формулами
@@ -536,8 +551,8 @@ function appUndoSale(p) {
     appLogMarkUndone_(logRec.logRow);
     appLog_(email, 'ОТМЕНА ПРОДАЖИ', SHEETS.PRODAJI, row, key, '', '', cur);
     PropertiesService.getScriptProperties().setProperty('needsRebuild', 'true');
-    const idx = appGetIndex_(true);
-    return Object.assign({ ok: true }, idx, appTodayPack_(p.date || appToday_()));
+    // остаток в телефоне поправляет сам интерфейс; индекс пересоберётся при следующей загрузке
+    return Object.assign({ ok: true, key: key }, appTodayPack_(p.date || appToday_()));
   });
 }
 
@@ -611,7 +626,7 @@ function appEditSale(p) {
     appLog_(email, 'ПРАВКА', SHEETS.PRODAJI, row, size + '|||' + name, qty, price, [size, name, qty, price].join('|') );
     appLog_(email, 'ПРАВКА (было)', SHEETS.PRODAJI, row, size + '|||' + name, prevQty, prevPrice, [size, name, prevQty, prevPrice].join('|'));
     try { PropertiesService.getScriptProperties().setProperty('needsRebuild', 'true'); } catch (e) { console.error(e); }
-    return Object.assign({ ok: true, row: row }, appGetIndex_(true), appTodayPack_(p.date || appToday_()));
+    return Object.assign({ ok: true, row: row }, appTodayPack_(p.date || appToday_()));
   });
 }
 
@@ -685,14 +700,9 @@ function appUndoDayExpense(p) {
 
 // Расходы дня, записанные приложением
 function appDayExpenses_(ps, day) {
-  const sh = appLogSheet_();
-  const last = sh.getLastRow();
   const out = [];
-  if (last < 2) return out;
-  const from = Math.max(2, last - 600);
-  const v = sh.getRange(from, 1, last - from + 1, 10).getValues();
   const map = {};
-  v.forEach(r => {
+  appLogRows_().v.forEach(r => {
     if (r[3] !== SHEETS.PRODAJI || r[2] !== 'РАСХОД') return;
     if (r[9]) { delete map[r[4]]; return; }
     map[r[4]] = { t: r[0], text: String(r[5]), sum: appNum_(r[7]), sig: String(r[8]) };
@@ -914,7 +924,9 @@ function appNextRow_(sh, sizeCol, brandCol) {
 
 // Все строки продаж одним списком. Работает и с новым журналом (колонка ДАТА),
 // и со старым листом (блоки дней со строкой даты) — пока данные не перенесены.
-function appReadSales_(ps, tz) {
+// Продажи из листа. ranges — [{from, n}] (только блоки нужного дня); без ranges читается весь лист.
+// Читаем только нужные колонки (до самой правой из используемых), а не панель кассы справа.
+function appReadSales_(ps, tz, ranges) {
   const map = getHeaderMap(ps);
   const ph = resolveCols(map, PRODAJI_HEADERS, ps.getName(), ['size', 'brand', 'qty']);
   const priceCol = findProdajiPriceCol(ps);
@@ -922,8 +934,15 @@ function appReadSales_(ps, tz) {
   const last = ps.getLastRow();
   const out = [];
   if (last < DATA_START_ROW) return out;
-  const w = ps.getLastColumn();
-  const v = ps.getRange(DATA_START_ROW, 1, last - DATA_START_ROW + 1, w).getValues();
+  const w = Math.min(ps.getLastColumn(), Math.max(ph.size, ph.brand, ph.qty, priceCol || 1,
+    ...Object.keys(px).map(k => px[k] || 1)));
+  (ranges || [{ from: DATA_START_ROW, n: last - DATA_START_ROW + 1 }]).forEach(rg => {
+    if (rg.n > 0) appParseSales_(ps.getRange(rg.from, 1, rg.n, w).getValues(), rg.from, tz, ph, priceCol, px, out);
+  });
+  return out;
+}
+
+function appParseSales_(v, base, tz, ph, priceCol, px, out) {
   let curMs = 0, curStr = '';
   for (let i = 0; i < v.length; i++) {
     const r = v[i];
@@ -943,17 +962,17 @@ function appReadSales_(ps, tz) {
     const margin = appIsWo_(pay0) ? -cost : (px.marja ? appNum_(r[px.marja - 1]) : (price * qty - cost));
     out.push({
       cm: (i + 1 < v.length && !(v[i + 1][ph.size - 1] instanceof Date) && String(v[i + 1][ph.size - 1]).trim() === '' && String(v[i + 1][ph.brand - 1]).indexOf(APP_CM) === 0) ? String(v[i + 1][ph.brand - 1]).slice(APP_CM.length) : '',
-      row: DATA_START_ROW + i, size: size, name: name, qty: qty, price: price, cost: cost, margin: margin,
+      row: base + i, size: size, name: name, qty: qty, price: price, cost: cost, margin: margin,
       ms: ms, day: ds, sig: [r[ph.size - 1], r[ph.brand - 1], r[ph.qty - 1], r[priceCol - 1]].map(String).join('|'),
       who: px.who ? String(r[px.who - 1] || '') : '',
       pay: px.pay ? String(r[px.pay - 1] || '') : ''
     });
   }
-  return out;
 }
 
 // ===== ИНДЕКС (кэш) =====
 
+let APP_IDX_FRESH_ = false;
 function appGetIndex_(force) {
   const cache = CacheService.getScriptCache();
   if (!force) {
@@ -971,6 +990,7 @@ function appGetIndex_(force) {
     }
   }
   const data = appBuildIndex_();
+  APP_IDX_FRESH_ = true;
   try {
     const s = JSON.stringify(data);
     const ver = String(Date.now());
@@ -1117,7 +1137,14 @@ function appSalesOfDay_(day, tz) {
   const logs = appLogMap_(SHEETS.PRODAJI);
   let times = {};
   try { times = appLogTimes_(SHEETS.PRODAJI); } catch (e) { console.error(e); }
-  appReadSales_(ps, tz).forEach(s => {
+  // Читаем только блоки этого дня (по колонке A), а не весь сезон: было ~5 с, стало доли секунды
+  let ranges = null;
+  try {
+    const px0 = appCols_(getHeaderMap(ps), APP_PH_EXTRA);
+    const last = ps.getLastRow();
+    if (!px0.date && last >= DATA_START_ROW) ranges = appDayRanges_(ps.getRange(DATA_START_ROW, 1, last - DATA_START_ROW + 1, 1).getValues(), day, tz);
+  } catch (e) { console.error(e); ranges = null; }
+  appReadSales_(ps, tz, ranges).forEach(s => {
     if (s.day !== day) return;
     out.rows.push({ cm: s.cm || '', t: times[s.row] || '', row: s.row, s: s.size, n: s.name, q: s.qty, pr: s.price, c: s.cost, m: s.margin, u: logs[s.row] === s.sig, w: s.who, y: s.pay });
     if (appIsWo_(s.pay)) { out.margin += s.margin; return; }
@@ -1363,16 +1390,23 @@ function appLogSheet_() {
 function appLog_(email, action, sheetName, row, key, qty, price, sig) {
   const sh = appLogSheet_();
   sh.appendRow([new Date(), email, action, sheetName, row, key, qty, price, sig, '']);
+  APP_LOG_MEMO_ = null;
+}
+
+// Последние 600 строк журнала: читаем один раз за запрос (раньше читали 3–4 раза подряд)
+let APP_LOG_MEMO_ = null;
+function appLogRows_() {
+  if (APP_LOG_MEMO_) return APP_LOG_MEMO_;
+  const sh = appLogSheet_();
+  const last = sh.getLastRow();
+  if (last < 2) return (APP_LOG_MEMO_ = { from: 2, v: [] });
+  const from = Math.max(2, last - 600);
+  return (APP_LOG_MEMO_ = { from: from, v: sh.getRange(from, 1, last - from + 1, 10).getValues() });
 }
 
 function appLogMap_(sheetName) {
-  const sh = appLogSheet_();
-  const last = sh.getLastRow();
   const map = {};
-  if (last < 2) return map;
-  const from = Math.max(2, last - 400);
-  const v = sh.getRange(from, 1, last - from + 1, 10).getValues();
-  v.forEach(r => {
+  appLogRows_().v.forEach(r => {
     if (r[3] !== sheetName || (r[2] !== 'ПРОДАЖА' && r[2] !== 'ПРИХОД' && r[2] !== 'РАСХОД' && r[2] !== 'ПРАВКА')) return;
     if (r[9]) { delete map[r[4]]; return; }
     map[r[4]] = String(r[8]);
@@ -1382,14 +1416,10 @@ function appLogMap_(sheetName) {
 
 // Время записи продажи из APP_ЖУРНАЛ: строка листа -> «ЧЧ:мм» (по поясу скрипта)
 function appLogTimes_(sheetName) {
-  const sh = appLogSheet_();
-  const last = sh.getLastRow();
   const map = {};
-  if (last < 2) return map;
-  const from = Math.max(2, last - 600);
   let tz = 'Asia/Almaty';
   try { tz = Session.getScriptTimeZone() || tz; } catch (e) { /* в тестах нет */ }
-  sh.getRange(from, 1, last - from + 1, 10).getValues().forEach(r => {
+  appLogRows_().v.forEach(r => {
     if (r[3] !== sheetName || r[2] !== 'ПРОДАЖА') return;
     if (r[9]) { delete map[r[4]]; return; }
     if (r[0] instanceof Date) map[r[4]] = Utilities.formatDate(r[0], tz, 'HH:mm');
@@ -1398,11 +1428,7 @@ function appLogTimes_(sheetName) {
 }
 
 function appLogFind_(sheetName, row) {
-  const sh = appLogSheet_();
-  const last = sh.getLastRow();
-  if (last < 2) return null;
-  const from = Math.max(2, last - 400);
-  const v = sh.getRange(from, 1, last - from + 1, 10).getValues();
+  const L = appLogRows_(), from = L.from, v = L.v;
   for (let i = v.length - 1; i >= 0; i--) {
     const r = v[i];
     if (r[3] === sheetName && Number(r[4]) === row && (r[2] === 'ПРОДАЖА' || r[2] === 'ПРИХОД' || r[2] === 'РАСХОД' || r[2] === 'ПРАВКА')) {
@@ -1415,6 +1441,7 @@ function appLogFind_(sheetName, row) {
 
 function appLogMarkUndone_(logRow) {
   appLogSheet_().getRange(logRow, 10).setValue(new Date());
+  APP_LOG_MEMO_ = null;
 }
 
 // ===== ПЕРЕНОС ДАННЫХ В НОВЫЕ ЛИСТЫ =====
