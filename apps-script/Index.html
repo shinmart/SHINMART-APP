@@ -318,6 +318,8 @@ body:has(.dlg) .toast,body:has(#sheet:not(.hidden)) .toast{opacity:0;visibility:
 .dacts{display:flex;gap:6px}
 .btn.smb.rent{color:#0f7a2a;background:#dff7e4}.btn.smb.pre,.btn.pre{color:#7a5a00;background:#fff3b0}
 .op.dk.rent{box-shadow:inset 4px 0 0 #00c853}.op.dk.pre{box-shadow:inset 4px 0 0 #ffd600}.op.dk.exp{box-shadow:inset 4px 0 0 var(--red)}
+span.fsz,span.fnm{display:inline!important;font-size:inherit!important;color:inherit!important;margin:0!important;padding:0!important;background:none!important;line-height:inherit!important}
+span.fsz{font-weight:700!important}span.fnm{font-weight:400!important}
 .ctot{display:flex;justify-content:space-between;align-items:baseline;font-size:14px;color:var(--ink2);margin:0 0 12px}.ctot b{font-size:20px;color:var(--ink)}
 @media (min-width:1000px){body.hascart .toast{bottom:84px}.cartbar{left:calc(var(--side) + 24px);right:24px;bottom:20px}}
 @media (min-width:1000px){
@@ -742,7 +744,7 @@ function renderList(){
     if(flt==='buy'){ var nd=buyNeed(it); if(nd) notes+='<span class="w">купить ~'+nd+' шт</span>'; if(it.s30) notes+='<span>'+(Math.round(it.s30/30*7*10)/10)+' шт/нед</span>'; }
     if(flt==='kasp') notes+='<span class="r">Kaspi выше рынка на '+fm(it.ka-it.km)+' ₸</span>';
     if(flt==='low'&&rw!==null) notes+='<span class="w">хватит ~'+rw+' дн.</span>';
-    html+='<div class="row '+(tcat(it.t)==='lip'?'lip':tcat(it.t)==='ship'?'ship':'')+'" data-k="'+esc(it.k)+'"><div class="l"><div class="sz">'+fullN(it.s,it.n)+'<i>'+tshort(it.t)+'</i></div>'+(notes?'<div class="nt">'+notes+'</div>':'')+'</div>'+
+    html+='<div class="row '+(tcat(it.t)==='lip'?'lip':tcat(it.t)==='ship'?'ship':'')+'" data-k="'+esc(it.k)+'"><div class="l"><div class="sz"><div>'+fullN(it.s,it.n)+'</div><i>'+tshort(it.t)+'</i></div>'+(notes?'<div class="nt">'+notes+'</div>':'')+'</div>'+
       '<div class="r"><div class="pr">'+(it.pr?fm(it.pr)+' ₸':'нет цены')+'</div><div class="st '+st+'">'+fm(it.o)+' шт</div></div></div>';
   });
   if(total>shown.length) html+='<button class="more" id="more">Показать ещё ('+(total-shown.length)+')</button>';
@@ -1028,7 +1030,7 @@ function sellLines(lines,total,com,pay,date){
 }
 
 /* ---------- ПРОДАЖИ (журнал дня) ---------- */
-function fullN(sz,nm){ return esc(sz)+' '+esc(nm); }   // как в таблице: «195/65/15 (91T) АТТАР B01 (KAZAKHSTAN)»
+function fullN(sz,nm){ return '<span class="fsz">'+esc(sz)+'</span> <span class="fnm">'+esc(nm)+'</span>'; }   // как в таблице: «195/65/15 (91T) АТТАР B01 (KAZAKHSTAN)»
 function sugBtn(it){
   var c=tcat(it.t), cls=c==='lip'?'lip':c==='ship'?'ship':'';
   return '<button class="'+cls+'" data-k="'+esc(it.k)+'"><div><b>'+fullN(it.s,it.n)+'</b>'+(cls?'<span><i class="tt '+cls+'">'+tshort(it.t)+'</i></span>':'')+'</div><em>'+(it.pr?fm(it.pr)+' ₸ · ':'')+fm(it.o)+' шт</em></button>';
