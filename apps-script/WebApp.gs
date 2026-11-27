@@ -913,9 +913,11 @@ function appSalesOfDay_(day, tz) {
   const ps = ss.getSheetByName(SHEETS.PRODAJI);
   const out = { date: day, exists: true, rows: [], qty: 0, sum: 0, cost: 0, margin: 0 };
   const logs = appLogMap_(SHEETS.PRODAJI);
+  let times = {};
+  try { times = appLogTimes_(SHEETS.PRODAJI); } catch (e) { console.error(e); }
   appReadSales_(ps, tz).forEach(s => {
     if (s.day !== day) return;
-    out.rows.push({ row: s.row, s: s.size, n: s.name, q: s.qty, pr: s.price, c: s.cost, m: s.margin, u: logs[s.row] === s.sig, w: s.who, y: s.pay });
+    out.rows.push({ t: times[s.row] || '', row: s.row, s: s.size, n: s.name, q: s.qty, pr: s.price, c: s.cost, m: s.margin, u: logs[s.row] === s.sig, w: s.who, y: s.pay });
     if (appIsWo_(s.pay)) { out.margin += s.margin; return; }
     out.qty += s.qty; out.sum += s.price * s.qty; out.cost += s.cost; out.margin += s.margin;
   });
@@ -1171,6 +1173,23 @@ function appLogMap_(sheetName) {
     if (r[3] !== sheetName || (r[2] !== 'ПРОДАЖА' && r[2] !== 'ПРИХОД' && r[2] !== 'РАСХОД')) return;
     if (r[9]) { delete map[r[4]]; return; }
     map[r[4]] = String(r[8]);
+  });
+  return map;
+}
+
+// Время записи продажи из APP_ЖУРНАЛ: строка листа -> «ЧЧ:мм» (по поясу скрипта)
+function appLogTimes_(sheetName) {
+  const sh = appLogSheet_();
+  const last = sh.getLastRow();
+  const map = {};
+  if (last < 2) return map;
+  const from = Math.max(2, last - 600);
+  let tz = 'Asia/Almaty';
+  try { tz = Session.getScriptTimeZone() || tz; } catch (e) { /* в тестах нет */ }
+  sh.getRange(from, 1, last - from + 1, 10).getValues().forEach(r => {
+    if (r[3] !== sheetName || r[2] !== 'ПРОДАЖА') return;
+    if (r[9]) { delete map[r[4]]; return; }
+    if (r[0] instanceof Date) map[r[4]] = Utilities.formatDate(r[0], tz, 'HH:mm');
   });
   return map;
 }

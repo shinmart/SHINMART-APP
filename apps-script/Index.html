@@ -253,8 +253,42 @@ a.sb{display:flex;align-items:center;justify-content:center;text-decoration:none
 
 /* ПК: от 1000 px — меню слева, контент на всю ширину, окна справа */
 .side{display:none}
+
+/* вид позиций: наименование главное, шипы синие, липучки красные */
+:root{--ship:#2457d6;--nav:58px}
+.sug button{align-items:center}
+.sug button.ship{box-shadow:inset 4px 0 0 var(--ship)}
+.sug button.lip{box-shadow:inset 4px 0 0 var(--red)}
+.sug b{font-size:15.5px;line-height:1.25;white-space:normal}
+.sug span{font-size:12.5px;margin-top:2px}
+.sug button>div{padding-left:4px}
+.sug .tt{display:inline-block;font-size:10.5px;font-weight:600;border-radius:5px;padding:1px 6px;margin-left:6px;vertical-align:1px;color:#fff}
+.sug .tt.ship{background:var(--ship)} .sug .tt.lip{background:var(--red)}
+.row.ship{box-shadow:inset 4px 0 0 var(--ship)} .row.lip{box-shadow:inset 4px 0 0 var(--red)}
+.allbtn{display:block;width:100%;margin:12px 0 6px;padding:12px;border-radius:12px;background:var(--fill);font-weight:600;font-size:14px;color:var(--ink2)}
+.moreb{display:block;width:100%;padding:13px;font-weight:600;font-size:14px;color:var(--ink2);background:var(--bg)}
+/* полоса дней, как в Kaspi Travel */
+.dstrip{display:flex;gap:8px;overflow-x:auto;padding:8px 16px 6px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.dstrip::-webkit-scrollbar{display:none}
+.dstrip button{flex:none;min-width:68px;padding:8px 10px;border-radius:12px;background:var(--card);border:1px solid var(--line);text-align:center;line-height:1.2}
+.dstrip button small{display:block;font-size:11.5px;color:var(--ink3);text-transform:lowercase}
+.dstrip button b{display:block;font-size:15px;font-weight:600}
+.dstrip button.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.dstrip button.on small{color:#c9ced6}
+.dstrip button.cal{min-width:48px;display:flex;align-items:center;justify-content:center}
+.dstrip input[type=date]{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+.op .m .tm{color:var(--ink3)}
+/* нижняя панель */
+.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:45;display:flex;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+.tabbar button{flex:1;height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11.5px;font-weight:500;color:var(--ink3)}
+.tabbar button svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.tabbar button.on{color:var(--ink);font-weight:600}
+.tabbar button.on svg{stroke:var(--accent-d)}
+body.seller .tabbar [data-go=abc]{display:none}
+.toast{bottom:calc(var(--nav) + env(safe-area-inset-bottom) + 14px)}
+@media (min-width:1000px){.tabbar{display:none}.toast{bottom:20px}}
 @media (min-width:1000px){
-  :root{--col:1520px;--side:244px}
+  :root{--col:1520px;--side:244px;--nav:0px}
   .app{display:grid;grid-template-columns:var(--side) minmax(0,1fr);grid-template-rows:auto auto auto 1fr;align-items:start}
   .app>:not(.side){grid-column:2}
   .side{display:flex;flex-direction:column;gap:2px;grid-column:1;grid-row:1/span 4;position:sticky;top:0;height:100vh;overflow:auto;border-right:1px solid var(--line);padding:20px 12px 24px}
@@ -339,10 +373,8 @@ a.sb{display:flex;align-items:center;justify-content:center;text-decoration:none
         <div id="hot"></div>
       </div>
       <div class="h2" style="padding-top:14px;padding-bottom:0">Записано</div>
-      <div class="dayrow">
-        <div class="mini" id="dayQuick"><button data-d="0" class="on">Сегодня</button><button data-d="1">Вчера</button></div>
-        <input type="date" id="salesDate" aria-label="Дата">
-      </div>
+      <div class="dstrip" id="dstrip"></div>
+      <input type="date" id="salesDate" aria-label="Дата" style="position:absolute;opacity:0;width:1px;height:1px;pointer-events:none">
       <div id="salesBody"></div>
     </section>
 
@@ -429,6 +461,12 @@ a.sb{display:flex;align-items:center;justify-content:center;text-decoration:none
 
 </div>
 
+<nav class="tabbar" id="tabbar" aria-label="Разделы">
+  <button data-go="sales"><svg viewBox="0 0 24 24"><path d="M6 6h15l-2 9H8z"/><path d="M6 6L5 3H2"/><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/></svg>Продажа</button>
+  <button data-go="stock"><svg viewBox="0 0 24 24"><path d="M3 8l9-5 9 5-9 5z"/><path d="M3 8v8l9 5 9-5V8"/></svg>Остатки</button>
+  <button data-go="buy"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg>Закупки</button>
+  <button data-go="abc"><svg viewBox="0 0 24 24"><path d="M5 20V10"/><path d="M12 20V4"/><path d="M19 20v-7"/></svg>Анализ</button>
+</nav>
 <div class="shade hidden" id="shade"></div>
 <div class="sheet hidden" id="sheet"></div>
 <div class="sheet hidden" id="menu"></div>
@@ -622,7 +660,7 @@ function renderList(){
     if(flt==='buy'){ var nd=buyNeed(it); if(nd) notes+='<span class="w">купить ~'+nd+' шт</span>'; if(it.s30) notes+='<span>'+(Math.round(it.s30/30*7*10)/10)+' шт/нед</span>'; }
     if(flt==='kasp') notes+='<span class="r">Kaspi выше рынка на '+fm(it.ka-it.km)+' ₸</span>';
     if(flt==='low'&&rw!==null) notes+='<span class="w">хватит ~'+rw+' дн.</span>';
-    html+='<div class="row" data-k="'+esc(it.k)+'"><div class="l"><div class="sz">'+esc(it.s)+'<i>'+tshort(it.t)+'</i></div><div class="nm">'+esc(it.n)+'</div>'+(notes?'<div class="nt">'+notes+'</div>':'')+'</div>'+
+    html+='<div class="row '+(tcat(it.t)==='lip'?'lip':tcat(it.t)==='ship'?'ship':'')+'" data-k="'+esc(it.k)+'"><div class="l"><div class="sz">'+esc(it.s)+'<i>'+tshort(it.t)+'</i></div><div class="nm">'+esc(it.n)+'</div>'+(notes?'<div class="nt">'+notes+'</div>':'')+'</div>'+
       '<div class="r"><div class="pr">'+(it.pr?fm(it.pr)+' ₸':'нет цены')+'</div><div class="st '+st+'">'+fm(it.o)+' шт</div></div></div>';
   });
   if(total>shown.length) html+='<button class="more" id="more">Показать ещё ('+(total-shown.length)+')</button>';
@@ -641,7 +679,7 @@ function openSale(k){
     '<div class="stock">'+tshort(it.t)+' · на складе <b>'+fm(it.o)+' шт</b></div></div>'+
     '</div><div class="sh-b">'+
     '<div class="f"><div class="lbl">Сколько штук</div><div class="step"><button data-s="-1" aria-label="Меньше">−</button><input id="sQty" inputmode="numeric" value="'+S.sale.qty+'"><button data-s="1" aria-label="Больше">+</button></div>'+
-      '<div class="pills" id="sQuick"><button data-q="1">1</button><button data-q="2">2</button><button data-q="4">4</button><button data-q="8">8</button></div></div>'+
+      '<div class="pills" id="sQuick"><button data-q="1">1</button><button data-q="2">2</button><button data-q="4">4</button><button data-q="6">6</button><button data-q="8">8</button></div></div>'+
     '<div class="f"><div class="lbl">Цена за 1 шт, ₸</div><input class="inp big" id="sPrice" inputmode="numeric" value="'+esc(S.sale.price)+'" placeholder="0"><div class="pills" id="sPrices">'+prices+'</div></div>'+
     '<div id="sNote"></div>'+
     '<button class="go" id="sGo">Продать</button>'+
@@ -733,7 +771,7 @@ function doSale(){
   S.lastQty=qty; lsSet('shm_lastqty',String(qty));
   S.salesDay=date; $('salesDate').value=date;
   it.o=Math.max(0,(it.o||0)-qty);
-  var pend={row:0,s:it.s,n:it.n,q:qty,pr:price,c:0,m:0,u:false,w:'',y:pay,pend:1};
+  var pend={row:0,s:it.s,n:it.n,q:qty,pr:price,c:0,m:0,u:false,w:'',y:pay,pend:1,t:nowHM()};
   var inDay=S.sales&&S.sales.rows&&(!S.sales.date||S.sales.date===date);
   if(inDay){ S.sales.rows.push(pend); S.sales.qty=(S.sales.qty||0)+qty; S.sales.sum=(S.sales.sum||0)+qty*price; }
   closeSheet(); $('sq').value=''; saleSug(); renderAll();
@@ -806,26 +844,58 @@ $('sheet').addEventListener('input',function(e){
 });
 
 /* ---------- ПРОДАЖИ (журнал дня) ---------- */
+function sugBtn(it){
+  var c=tcat(it.t), cls=c==='lip'?'lip':c==='ship'?'ship':'';
+  return '<button class="'+cls+'" data-k="'+esc(it.k)+'"><div><b>'+esc(it.n)+'</b><span>'+esc(it.s)+(cls?'<i class="tt '+cls+'">'+tshort(it.t)+'</i>':'')+'</span></div><em>'+(it.pr?fm(it.pr)+' ₸ · ':'')+fm(it.o)+' шт</em></button>';
+}
+var sLim=30, allOpen=false, allLim=80;
 function saleSug(){
   var q=$('sq').value; $('sqx').classList.toggle('hidden',!q);
   if(!q.trim()){ $('sSug').innerHTML=''; return; }
   var pq=parseQ(q), a=S.items.filter(function(it){ return it.o>0&&matches(it,pq); });
   if(!a.length) a=S.items.filter(function(it){ return matches(it,pq); });
-  a=sortItems(a).slice(0,10);
-  $('sSug').innerHTML=a.length?a.map(function(it){ return '<button data-k="'+esc(it.k)+'"><div><b>'+esc(it.s)+'</b><span>'+esc(it.n)+'</span></div><em>'+(it.pr?fm(it.pr)+' ₸ · ':'')+fm(it.o)+' шт</em></button>'; }).join(''):'<div class="empty" style="padding:16px">Ничего не найдено</div>';
+  a=sortItems(a);
+  var shown=a.slice(0,sLim);
+  $('sSug').innerHTML=a.length?shown.map(sugBtn).join('')+(a.length>shown.length?'<button class="moreb" data-more="1">Показать ещё ('+(a.length-shown.length)+')</button>':''):'<div class="empty" style="padding:16px">Ничего не найдено</div>';
 }
 function renderHot(){
   var el=$('hot'); if(!el) return;
   if($('sq').value.trim()||!S.items.length){ el.innerHTML=''; return; }
   var a=S.items.filter(function(i){ return i.o>0&&i.s30>0; }).sort(function(x,y){ return y.s30-x.s30; }).slice(0,5);
-  el.innerHTML=a.length?'<div class="lbl" style="margin:14px 0 6px">Часто продают</div><div class="sug" style="margin-top:0">'+a.map(function(it){ return '<button data-k="'+esc(it.k)+'"><div><b>'+esc(it.s)+'</b><span>'+esc(it.n)+'</span></div><em>'+(it.pr?fm(it.pr)+' ₸ · ':'')+fm(it.o)+' шт</em></button>'; }).join('')+'</div>':'';
+  var h=a.length?'<div class="lbl" style="margin:14px 0 6px">Часто продают</div><div class="sug" style="margin-top:0">'+a.map(sugBtn).join('')+'</div>':'';
+  var all=sortItems(S.items.filter(function(i){ return i.o>0; }));
+  h+='<button class="allbtn" id="allBtn">'+(allOpen?'Скрыть список':'Все позиции в наличии ('+all.length+')')+'</button>';
+  if(allOpen){
+    var sh=all.slice(0,allLim);
+    h+='<div class="sug" id="allList" style="margin-top:0">'+sh.map(sugBtn).join('')+(all.length>sh.length?'<button class="moreb" data-allmore="1">Показать ещё ('+(all.length-sh.length)+')</button>':'')+'</div>';
+  }
+  el.innerHTML=h;
 }
-$('hot').addEventListener('click',function(e){ var b=e.target.closest('button'); if(b) openSale(b.getAttribute('data-k')); });
-$('sq').addEventListener('input',function(){ saleSug(); renderHot(); });
+$('hot').addEventListener('click',function(e){ var b=e.target.closest('button'); if(!b) return;
+  if(b.id==='allBtn'){ allOpen=!allOpen; allLim=80; renderHot(); return; }
+  if(b.hasAttribute('data-allmore')){ allLim+=100; renderHot(); return; }
+  if(b.getAttribute('data-k')) openSale(b.getAttribute('data-k')); });
+$('sq').addEventListener('input',function(){ sLim=30; saleSug(); renderHot(); });
 $('sqx').onclick=function(){ $('sq').value=''; saleSug(); renderHot(); $('sq').focus(); };
-$('sSug').addEventListener('click',function(e){ var b=e.target.closest('button'); if(b){ openSale(b.getAttribute('data-k')); } });
+$('sSug').addEventListener('click',function(e){ var b=e.target.closest('button'); if(!b) return; if(b.hasAttribute('data-more')){ sLim+=60; saleSug(); return; } openSale(b.getAttribute('data-k')); });
 
+function nowHM(){ var d=new Date(); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); }
+var DOW=['вс','пн','вт','ср','чт','пт','сб'];
+function isoToDate(iso){ var p=iso.split('-'); return new Date(+p[0],+p[1]-1,+p[2]); }
+function renderStrip(){
+  var el=$('dstrip'); if(!el) return;
+  var days=[], i; for(i=0;i<21;i++) days.push(daysAgoISO(i));
+  if(S.salesDay&&days.indexOf(S.salesDay)<0){ days.push(S.salesDay); days.sort().reverse(); }
+  days.reverse();
+  var h=days.map(function(iso){ var d=isoToDate(iso), t=iso===todayISO();
+    return '<button data-day="'+iso+'" class="'+(iso===S.salesDay?'on':'')+'"><small>'+(t?'сегодня':DOW[d.getDay()])+'</small><b>'+('0'+d.getDate()).slice(-2)+'.'+('0'+(d.getMonth()+1)).slice(-2)+'</b></button>'; }).join('');
+  h+='<button class="cal" data-cal="1" aria-label="Другая дата"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></button>';
+  el.innerHTML=h;
+  var on=el.querySelector('.on'); if(on&&on.scrollIntoView) { try{ el.scrollLeft=on.offsetLeft-el.clientWidth/2+on.offsetWidth/2; }catch(e){} }
+}
+var stripDay='';
 function renderSales(){
+  if(stripDay!==S.salesDay){ stripDay=S.salesDay; renderStrip(); }
   var s=S.sales, el=$('salesBody');
   if(!s||s.date!==S.salesDay){ el.innerHTML='<div class="empty">Загружаю…</div>'; return; }
   var h='<div class="sum3"><div>штук<b>'+fm(s.qty)+'</b></div><div>выручка<b>'+money(s.sum)+'</b></div><div class="m secret">маржа<b>'+money(s.margin)+'</b></div></div>';
@@ -842,19 +912,20 @@ function renderSales(){
     var right=wo?'<div class="r">без оплаты<small class="secret neg">убыток '+money(-r.m)+'</small></div>':
       rt?'<div class="r">−'+money(r.pr*r.q)+'</div>':
       '<div class="r">'+money(r.pr*r.q)+'<small class="secret '+(r.m<0?'neg':'')+'">маржа '+money(r.m)+'</small></div>';
-    h+='<div class="op"><div class="l"><b>'+esc(r.s)+' × '+fm(r.q)+tag+'</b><div class="n">'+esc(r.n)+'</div>'+(r.w?'<div class="m">'+esc(String(r.w).split('@')[0])+'</div>':'')+
+    h+='<div class="op"><div class="l"><b>'+esc(r.s)+' × '+fm(r.q)+tag+'</b><div class="n">'+esc(r.n)+'</div>'+((r.w||r.t)?'<div class="m">'+(r.w?esc(String(r.w).split('@')[0]):'')+(r.w&&r.t?' · ':'')+(r.t?'<span class="tm">записано '+esc(r.t)+'</span>':'')+'</div>':'')+
       (btns?'<div class="btns">'+btns+'</div>':'')+'</div>'+right+'</div>';
   });
   el.innerHTML=h;
 }
 function setSalesDay(iso){
   S.salesDay=iso; $('salesDate').value=iso;
-  var q=$('dayQuick').querySelectorAll('button');
-  q[0].classList.toggle('on',iso===todayISO()); q[1].classList.toggle('on',iso===daysAgoISO(1));
+  renderStrip();
   S.sales=null; renderSales();
   run('appGetSales',{date:iso}).then(function(r){ if(iso===S.salesDay){ S.sales=r.sales; renderSales(); } }).catch(function(e){ toast('Не загрузилось',e.message,{err:true}); });
 }
-$('dayQuick').addEventListener('click',function(e){ var d=e.target.getAttribute('data-d'); if(d!==null) setSalesDay(daysAgoISO(num(d))); });
+$('dstrip').addEventListener('click',function(e){ var b=e.target.closest('button'); if(!b) return;
+  if(b.hasAttribute('data-cal')){ var di=$('salesDate'); try{ if(di.showPicker) di.showPicker(); else di.click(); }catch(er){ di.click(); } return; }
+  var d=b.getAttribute('data-day'); if(d) setSalesDay(d); });
 $('salesDate').addEventListener('change',function(){ if(this.value) setSalesDay(this.value); });
 $('salesBody').addEventListener('click',function(e){
   var b=e.target.closest('.undo'); if(!b) return;
@@ -1420,7 +1491,20 @@ $('menu').addEventListener('click',function(e){
 });
 /* ПК: постоянное меню слева */
 function isWide(){ return window.matchMedia&&window.matchMedia('(min-width:1000px)').matches; }
+function renderTabbar(){
+  var el=$('tabbar'); if(!el) return;
+  var key=S.tab==='more'?(S.page==='abc'?'abc':''):S.tab, bs=el.querySelectorAll('button'), i;
+  for(i=0;i<bs.length;i++){ var on=bs[i].getAttribute('data-go')===key; bs[i].classList.toggle('on',on); if(on) bs[i].setAttribute('aria-current','page'); else bs[i].removeAttribute('aria-current'); }
+}
+$('tabbar').addEventListener('click',function(e){
+  var b=e.target.closest('[data-go]'); if(!b) return; var g=b.getAttribute('data-go');
+  if(g==='stock'){ S.flt=''; S.limit=120; }
+  goMenu(g);
+  if(g==='stock'){ renderFbar(); renderList(); }
+  window.scrollTo(0,0);
+});
 function renderSide(){
+  renderTabbar();
   var el=$('side'); if(!el||!isWide()) return;
   var key=S.tab==='more'?(S.page||'more'):(S.tab==='stock'&&S.flt?'flt:'+S.flt:S.tab);
   function cnt(f){ return (S.items||[]).filter(function(i){ return fltPass(i,f); }).length||''; }
