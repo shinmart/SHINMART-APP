@@ -74,7 +74,7 @@ input[type=search]::-webkit-search-cancel-button{-webkit-appearance:none;display
 .row{display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid var(--line);min-height:64px;cursor:pointer}
 .row:active{background:var(--bg)}
 .row .l{flex:1;min-width:0}
-.row .sz{font-size:17px;font-weight:600;display:flex;align-items:baseline;gap:8px}
+.row .sz{font-size:16px;font-weight:600;line-height:1.3;display:flex;align-items:baseline;gap:8px}
 .row .sz i{font-style:normal;font-size:11.5px;font-weight:500;color:var(--ink3)}
 .row .nm{font-size:13px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
 .row .nt{font-size:12px;margin-top:3px;display:flex;gap:10px;flex-wrap:wrap}
@@ -215,7 +215,7 @@ details.more2[open] summary::after{content:" ▴"}
 .grab{width:40px;height:4px;border-radius:2px;background:#d3d7de;margin:8px auto 2px}
 .sh-h{padding:8px 16px 12px;display:flex;gap:12px;align-items:flex-start}
 .sh-h .t{flex:1;min-width:0}
-.sh-h h2{margin:0;font-size:24px;font-weight:700;letter-spacing:-.2px}
+.sh-h h2{margin:0;font-size:20px;line-height:1.25;font-weight:700;letter-spacing:-.2px}
 .sh-h p{margin:2px 0 0;font-size:14px;color:var(--ink2)}
 .sh-h .ph{width:64px;height:64px;border-radius:12px;background:var(--fill) center/contain no-repeat;flex:none}
 .sh-b{padding:0 16px}
@@ -742,7 +742,7 @@ function renderList(){
     if(flt==='buy'){ var nd=buyNeed(it); if(nd) notes+='<span class="w">купить ~'+nd+' шт</span>'; if(it.s30) notes+='<span>'+(Math.round(it.s30/30*7*10)/10)+' шт/нед</span>'; }
     if(flt==='kasp') notes+='<span class="r">Kaspi выше рынка на '+fm(it.ka-it.km)+' ₸</span>';
     if(flt==='low'&&rw!==null) notes+='<span class="w">хватит ~'+rw+' дн.</span>';
-    html+='<div class="row '+(tcat(it.t)==='lip'?'lip':tcat(it.t)==='ship'?'ship':'')+'" data-k="'+esc(it.k)+'"><div class="l"><div class="sz">'+esc(it.s)+'<i>'+tshort(it.t)+'</i></div><div class="nm">'+esc(it.n)+'</div>'+(notes?'<div class="nt">'+notes+'</div>':'')+'</div>'+
+    html+='<div class="row '+(tcat(it.t)==='lip'?'lip':tcat(it.t)==='ship'?'ship':'')+'" data-k="'+esc(it.k)+'"><div class="l"><div class="sz">'+fullN(it.s,it.n)+'<i>'+tshort(it.t)+'</i></div>'+(notes?'<div class="nt">'+notes+'</div>':'')+'</div>'+
       '<div class="r"><div class="pr">'+(it.pr?fm(it.pr)+' ₸':'нет цены')+'</div><div class="st '+st+'">'+fm(it.o)+' шт</div></div></div>';
   });
   if(total>shown.length) html+='<button class="more" id="more">Показать ещё ('+(total-shown.length)+')</button>';
@@ -757,7 +757,7 @@ function openSale(k){
   S.sale={it:it,qty:Math.max(1,S.lastQty||4),price:it.pr?String(it.pr):'',date:todayISO(),rid:rid(),confirm:false,pay:'нал'};
   var prices='';
   [['нал',it.pr,'нал'],['QR',it.qr,'QR'],['Kaspi',it.ka,'Kaspi'],['рассрочка',it.ka,'рассрочка']].forEach(function(p){ if(p[1]) prices+='<button data-p="'+p[1]+'" data-y="'+p[2]+'">'+p[0]+' <b>'+fm(p[1])+'</b></button>'; });
-  var h='<div class="grab"></div><div class="sh-h"><div class="t"><h2>'+esc(it.s)+'</h2><p>'+esc(it.n)+'</p>'+
+  var h='<div class="grab"></div><div class="sh-h"><div class="t"><h2>'+fullN(it.s,it.n)+'</h2>'+
     '<div class="stock">'+tshort(it.t)+' · на складе <b>'+fm(it.o)+' шт</b></div></div>'+
     '</div><div class="sh-b">'+
     '<div class="f"><div class="lbl">Сколько штук</div><div class="step"><button data-s="-1" aria-label="Меньше">−</button><input id="sQty" inputmode="numeric" value="'+S.sale.qty+'"><button data-s="1" aria-label="Больше">+</button></div>'+
@@ -966,7 +966,7 @@ function openCart(){
   function draw(){
     var h='<div class="box"><p><b>Продажа комплектом</b><br><span style="font-weight:400;color:var(--ink2)">Одному клиенту, одной записью</span></p><div class="cl">';
     cart.forEach(function(l,i){
-      h+='<div class="cli"><div class="l"><b>'+esc(l.it.n)+'</b><small>'+esc(l.it.s)+'</small>'+
+      h+='<div class="cli"><div class="l"><b>'+fullN(l.it.s,l.it.n)+'</b>'+
         '<div class="cin"><input class="inp cq" data-i="'+i+'" inputmode="numeric" value="'+l.qty+'"> шт × <input class="inp cp" data-i="'+i+'" inputmode="decimal" value="'+l.price+'"> ₸</div></div>'+
         '<button class="cx" data-del="'+i+'" aria-label="Убрать">×</button></div>';
     });
@@ -1028,9 +1028,10 @@ function sellLines(lines,total,com,pay,date){
 }
 
 /* ---------- ПРОДАЖИ (журнал дня) ---------- */
+function fullN(sz,nm){ return esc(sz)+' '+esc(nm); }   // как в таблице: «195/65/15 (91T) АТТАР B01 (KAZAKHSTAN)»
 function sugBtn(it){
   var c=tcat(it.t), cls=c==='lip'?'lip':c==='ship'?'ship':'';
-  return '<button class="'+cls+'" data-k="'+esc(it.k)+'"><div><b>'+esc(it.n)+'</b><span>'+esc(it.s)+(cls?'<i class="tt '+cls+'">'+tshort(it.t)+'</i>':'')+'</span></div><em>'+(it.pr?fm(it.pr)+' ₸ · ':'')+fm(it.o)+' шт</em></button>';
+  return '<button class="'+cls+'" data-k="'+esc(it.k)+'"><div><b>'+fullN(it.s,it.n)+'</b>'+(cls?'<span><i class="tt '+cls+'">'+tshort(it.t)+'</i></span>':'')+'</div><em>'+(it.pr?fm(it.pr)+' ₸ · ':'')+fm(it.o)+' шт</em></button>';
 }
 var sLim=30, allOpen=false, allLim=80;
 function saleSug(){
@@ -1094,8 +1095,8 @@ function opHtml(r,flat){
     rt?'<div class="r">−'+money(r.pr*r.q)+'</div>':
     '<div class="r">'+money(r.pr*r.q)+'<small class="secret '+(r.m<0?'neg':'')+'">маржа '+money(r.m)+'</small></div>';
   var meta=((r.w||r.t)?'<div class="m">'+(r.t?'<span class="tm">'+esc(r.t)+'</span>':'')+(r.w&&r.t?' · ':'')+(r.w?esc(String(r.w).split('@')[0]):'')+'</div>':'');
-  var head=flat?esc(r.s)+' × '+fm(r.q)+tag:fm(r.q)+' шт × '+fm(r.pr)+' ₸'+tag;
-  return '<div class="op'+(flat?'':' sub')+'"><div class="l"><b>'+head+'</b>'+(flat?'<div class="n">'+esc(r.n)+'</div>':'')+meta+
+  var head=flat?fullN(r.s,r.n):fm(r.q)+' шт × '+fm(r.pr)+' ₸'+tag;
+  return '<div class="op'+(flat?'':' sub')+'"><div class="l"><b>'+head+'</b>'+(flat?'<div class="n">'+fm(r.q)+' шт × '+fm(r.pr)+' ₸'+tag+'</div>':'')+meta+
     (r.cm?'<div class="cm">💬 '+esc(r.cm)+'</div>':'')+(btns?'<div class="btns">'+btns+'</div>':'')+'</div>'+right+'</div>';
 }
 function renderSales(){
@@ -1122,7 +1123,7 @@ function renderSales(){
       var x=g[k], open=!!(S.openG&&S.openG[k])||!!q;
       var it=null; (S.items||[]).forEach(function(i){ if(!it&&i.s===x.s&&i.n===x.n) it=i; });
       var cls=it?(tcat(it.t)==='lip'?' lip':tcat(it.t)==='ship'?' ship':''):'';
-      h+='<div class="sg'+cls+'"><button class="gh" data-g="'+esc(k)+'"><div class="l"><b>'+esc(x.n)+'</b><span>'+esc(x.s)+'</span></div><div class="r"><b>'+fm(x.q)+' шт</b><span>'+money(x.sum)+'<i class="secret"> · '+money(x.m)+'</i></span></div><em>'+(open?'▴':'▾')+'</em></button>';
+      h+='<div class="sg'+cls+'"><button class="gh" data-g="'+esc(k)+'"><div class="l"><b>'+fullN(x.s,x.n)+'</b></div><div class="r"><b>'+fm(x.q)+' шт</b><span>'+money(x.sum)+'<i class="secret"> · '+money(x.m)+'</i></span></div><em>'+(open?'▴':'▾')+'</em></button>';
       if(open){ x.rows.slice().sort(function(a,b){ return (b.t||'').localeCompare(a.t||'')||b.row-a.row; }).forEach(function(r){ h+=opHtml(r,false); }); }
       h+='</div>';
     });
@@ -1178,7 +1179,7 @@ $('salesBody').addEventListener('click',function(e){
 });
 function editDialog(r){
   var d=document.createElement('div'); d.className='dlg';
-  d.innerHTML='<div class="box"><p><b>Изменить продажу</b><br><span style="font-weight:400;color:var(--ink2)">'+esc(r.s)+' · '+esc(r.n)+'</span></p>'+
+  d.innerHTML='<div class="box"><p><b>Изменить продажу</b><br><span style="font-weight:400;color:var(--ink2)">'+fullN(r.s,r.n)+'</span></p>'+
     '<div class="lbl">Сколько штук</div><input class="inp" id="edQ" inputmode="numeric" value="'+r.q+'" style="margin-bottom:10px">'+
     '<div class="lbl">Цена за 1 шт, ₸</div><input class="inp" id="edP" inputmode="decimal" value="'+r.pr+'" style="margin-bottom:6px">'+
     '<p class="note" style="margin:0 0 12px">Строка в таблице изменится, себестоимость и остаток пересчитаются.</p>'+
@@ -1232,7 +1233,7 @@ function prepayDialog(it0,q0,p0){
   var it=it0||null;
   var d=document.createElement('div'); d.className='dlg';
   function posHtml(){
-    if(it) return '<div class="cli"><div class="l"><b>'+esc(it.n)+'</b><small>'+esc(it.s)+' · на складе '+fm(it.o)+' шт</small></div><button class="cx" id="pX" aria-label="Другая позиция">×</button></div>';
+    if(it) return '<div class="cli"><div class="l"><b>'+fullN(it.s,it.n)+'</b><small>на складе '+fm(it.o)+' шт</small></div><button class="cx" id="pX" aria-label="Другая позиция">×</button></div>';
     return '<input class="inp" id="pQ" placeholder="Позиция: размер или название" autocomplete="off"><div class="sug" id="pSug" style="max-height:240px;overflow:auto"></div>';
   }
   d.innerHTML='<div class="box"><p><b>Предоплата за '+ddmm(S.salesDay)+'</b><br><span style="font-weight:400;color:var(--ink2)">Жёлтой строкой, сумма в плюс, без маржи. Склад не меняется.</span></p>'+
@@ -1263,7 +1264,7 @@ $('btnRent').onclick=function(){ expenseDialog('rent'); };
 $('btnPre').onclick=function(){ prepayDialog(null); };
 function returnDialog(r){
   var d=document.createElement('div'); d.className='dlg';
-  d.innerHTML='<div class="box"><p><b>Возврат '+esc(r.s)+'</b><br><span style="font-weight:400;color:var(--ink2)">'+esc(r.n)+'</span></p>'+
+  d.innerHTML='<div class="box"><p><b>Возврат</b><br><span style="font-weight:400;color:var(--ink2)">'+fullN(r.s,r.n)+'</span></p>'+
     '<div class="lbl">Сколько штук вернули</div><input class="inp" id="rtQ" inputmode="numeric" value="'+r.q+'" style="margin-bottom:10px">'+
     '<div class="lbl">Вернули клиенту за 1 шт, ₸</div><input class="inp" id="rtP" inputmode="numeric" value="'+r.pr+'" style="margin-bottom:6px">'+
     '<p class="note" style="margin:0 0 12px">Шины вернутся на склад, выручка и маржа в итогах уменьшатся. Запишется сегодняшним числом.</p>'+
@@ -1282,7 +1283,7 @@ function returnDialog(r){
 
 /* ---------- ПРИХОД ---------- */
 function sugHtml(arr){
-  return arr.map(function(it){ return '<button data-k="'+esc(it.k)+'"><div><b>'+esc(it.s)+'</b><span>'+esc(it.n)+'</span></div><em>'+fm(it.o)+' шт</em></button>'; }).join('');
+  return arr.map(function(it){ return '<button data-k="'+esc(it.k)+'"><div><b>'+fullN(it.s,it.n)+'</b></div><em>'+fm(it.o)+' шт</em></button>'; }).join('');
 }
 function searchPool(q){
   var pq=parseQ(q); if(!q.trim()) return [];
@@ -1314,7 +1315,7 @@ function renderBuy(){
   for(i=0;i<seg.length;i++) seg[i].classList.toggle('on',seg[i].getAttribute('data-m')===S.buy.mode);
   var it=S.buy.it, ch=$('buyChosen');
   $('buyQ').classList.toggle('hidden',!!it); ch.classList.toggle('hidden',!it);
-  if(it) ch.innerHTML='<div class="t"><b>'+esc(it.s)+'</b><span>'+esc(it.n)+'</span><span>на складе '+fm(it.o)+' шт'+(it.c?'<span class="secret"> · СС '+fm(it.c)+'</span>':'')+'</span></div><button class="x" aria-label="Выбрать другую">×</button>';
+  if(it) ch.innerHTML='<div class="t"><b>'+fullN(it.s,it.n)+'</b><span>на складе '+fm(it.o)+' шт'+(it.c?'<span class="secret"> · СС '+fm(it.c)+'</span>':'')+'</span></div><button class="x" aria-label="Выбрать другую">×</button>';
   var sups=(S.meta.suppliers||[]).slice(0,7), h='';
   sups.forEach(function(s){ h+='<button class="'+(!S.buy.supOther&&S.buy.sup===s?'on':'')+'" data-s="'+esc(s)+'">'+esc(s)+'</button>'; });
   h+='<button class="'+(S.buy.supOther?'on':'')+'" data-s="__other">Другой</button>';
@@ -1746,7 +1747,7 @@ function abcOpen(c){
   if(!box.classList.contains('hidden')){ box.classList.add('hidden'); return; }
   var arr=S.abc.items[c]||[];
   box.innerHTML=(arr.length?arr.map(function(x){
-    return '<div class="op" data-k="'+esc(x.k)+'"><div class="l"><b>'+esc(x.s)+'</b><div class="n">'+esc(x.n)+'</div></div><div class="r">'+(x.q?fm(x.q)+' шт · '+money(x.sum):'продаж нет')+'<small style="color:var(--ink2)">на складе '+fm(x.o)+' шт</small></div></div>';
+    return '<div class="op" data-k="'+esc(x.k)+'"><div class="l"><b>'+fullN(x.s,x.n)+'</b></div><div class="r">'+(x.q?fm(x.q)+' шт · '+money(x.sum):'продаж нет')+'<small style="color:var(--ink2)">на складе '+fm(x.o)+' шт</small></div></div>';
   }).join(''):'<div class="empty" style="padding:16px">Пусто</div>')+(S.abc.sum[c].n>arr.length?'<div class="empty" style="padding:10px;font-size:12px">Показаны первые '+arr.length+' из '+S.abc.sum[c].n+'</div>':'');
   box.classList.remove('hidden');
 }
