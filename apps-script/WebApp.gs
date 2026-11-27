@@ -1141,8 +1141,7 @@ function appSalesOfDay_(day, tz) {
   let ranges = null;
   try {
     const px0 = appCols_(getHeaderMap(ps), APP_PH_EXTRA);
-    const last = ps.getLastRow();
-    if (!px0.date && last >= DATA_START_ROW) ranges = appDayRanges_(ps.getRange(DATA_START_ROW, 1, last - DATA_START_ROW + 1, 1).getValues(), day, tz);
+    if (!px0.date) ranges = appDayRangesCached_(ps, day, tz);
   } catch (e) { console.error(e); ranges = null; }
   appReadSales_(ps, tz, ranges).forEach(s => {
     if (s.day !== day) return;
@@ -1152,12 +1151,41 @@ function appSalesOfDay_(day, tz) {
   });
   try { out.exp = appDayExpenses_(ps, day); out.expSum = out.exp.reduce((t, x) => t + x.sum, 0); } catch (e) { out.exp = []; out.expSum = 0; console.error(e); }
   try {
-    appReturns_(day, day, tz).forEach(x => {
+    if (appHasReturns_()) appReturns_(day, day, tz).forEach(x => {
       out.rows.push({ row: x.row, s: x.size, n: x.name, q: x.q, pr: x.q ? x.refund / x.q : 0, c: x.cost, m: -(x.refund - x.cost), u: x.u, w: '', y: 'ВОЗВРАТ', ret: 1 });
       out.qty -= x.q; out.sum -= x.refund; out.cost -= x.cost; out.margin -= (x.refund - x.cost);
     });
   } catch (e) { console.error(e); }
   return out;
+}
+
+// Где в листе блок дня: номер строки заголовка храним в кэше, каждый раз проверяем, что там та же дата.
+// Каждое чтение из большой таблицы стоит ~1 с, поэтому колонку A целиком читаем только если кэш не подошёл.
+function appDayRangesCached_(ps, day, tz) {
+  const cache = CacheService.getScriptCache();
+  const key = 'PRDAY_' + day;
+  const last = ps.getLastRow();
+  if (last < DATA_START_ROW) return [];
+  let head = 0;
+  try { head = Number(cache.get(key)) || 0; } catch (e) { head = 0; }
+  if (head >= DATA_START_ROW && head <= last) {
+    const n = Math.min(last - head + 1, 160);
+    const a = ps.getRange(head, 1, n, 1).getValues();
+    if (a[0][0] instanceof Date && appDay_(a[0][0], tz) === day) {
+      let end = -1;
+      for (let i = 1; i < a.length; i++) if (a[i][0] instanceof Date) { end = i; break; }
+      if (end > 0) return [{ from: head, n: end }];
+      if (head + n - 1 >= last) return [{ from: head, n: n }];
+    }
+  }
+  const ranges = appDayRanges_(ps.getRange(DATA_START_ROW, 1, last - DATA_START_ROW + 1, 1).getValues(), day, tz);
+  try { if (ranges.length === 1) cache.put(key, String(ranges[0].from), 21600); } catch (e) { console.error(e); }
+  return ranges;
+}
+
+// Есть ли в журнале приложения возвраты (строки ЗАКУПКИ с поставщиком ВОЗВРАТ): без них не читаем весь лист ЗАКУПКИ
+function appHasReturns_() {
+  return appLogRows_().v.some(r => r[3] === SHEETS.ZAKUP && r[2] === 'ПРИХОД' && !r[9] && /\|ВОЗВРАТ$/.test(String(r[8])));
 }
 
 function appRecentPurchases_(tz) {
