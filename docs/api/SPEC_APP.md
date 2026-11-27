@@ -18,7 +18,7 @@
 | `appUndoSale` | `row,date,reqId` | индекс | все |
 | `appAddSaleBatch` | `items[≤12]{size,name,qty,price},total,comment,pay,date,reqId` | `rows,row,prices` | все |
 | `appEditSale` | `row,date,qty,price` (размер/название не меняются) | индекс + итог дня | все |
-| `appAddDayExpense` | `text,sum,date,reqId` — красная строка в дне | `row` | владелец |
+| `appAddDayExpense` | `kind(exp/rent/pre),text,sum,date,reqId` — особая строка дня: exp красная (минус, маржа минус), rent зелёная (плюс, без маржи), pre жёлтая (плюс, без маржи, склад не меняет) | итог дня | exp/rent — владелец, pre — все |
 | `appUndoDayExpense` | `row,date` | итог дня | владелец |
 | `appAddPurchase` / `appUndoPurchase` | см. код | индекс | все |
 | `appAddReturn`, `appAddWriteoff`, `appApplyInventory` | см. код | индекс | все |

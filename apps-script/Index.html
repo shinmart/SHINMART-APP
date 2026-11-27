@@ -314,7 +314,10 @@ body.seller .tabbar [data-go=abc]{display:none}
 .cin .inp{height:38px;width:76px;padding:0 8px;font-size:15px}
 .cx{width:34px;height:34px;font-size:22px;color:var(--ink3)}
 body.hascart .toast{bottom:calc(var(--nav) + env(safe-area-inset-bottom) + 78px)}
-body:has(.dlg) .toast{opacity:0;visibility:hidden}
+body:has(.dlg) .toast,body:has(#sheet:not(.hidden)) .toast{opacity:0;visibility:hidden}
+.dacts{display:flex;gap:6px}
+.btn.smb.rent{color:#0f7a2a;background:#dff7e4}.btn.smb.pre,.btn.pre{color:#7a5a00;background:#fff3b0}
+.op.dk.rent{box-shadow:inset 4px 0 0 #00c853}.op.dk.pre{box-shadow:inset 4px 0 0 #ffd600}.op.dk.exp{box-shadow:inset 4px 0 0 var(--red)}
 .ctot{display:flex;justify-content:space-between;align-items:baseline;font-size:14px;color:var(--ink2);margin:0 0 12px}.ctot b{font-size:20px;color:var(--ink)}
 @media (min-width:1000px){body.hascart .toast{bottom:84px}.cartbar{left:calc(var(--side) + 24px);right:24px;bottom:20px}}
 @media (min-width:1000px){
@@ -402,7 +405,7 @@ body:has(.dlg) .toast{opacity:0;visibility:hidden}
         <div class="sug" id="sSug"></div>
         <div id="hot"></div>
       </div>
-      <div class="h2 hrow" style="padding-top:14px;padding-bottom:0"><span>Записано</span><button class="btn smb owner" id="btnExp">− Расход</button></div>
+      <div class="h2 hrow" style="padding-top:14px;padding-bottom:0"><span>Записано</span><span class="dacts"><button class="btn smb owner" id="btnExp">− Расход</button><button class="btn smb rent owner" id="btnRent">Аренда</button><button class="btn smb pre" id="btnPre">Предоплата</button></span></div>
       <div class="dstrip" id="dstrip"></div>
       <input type="date" id="salesDate" aria-label="Дата" style="position:absolute;opacity:0;width:1px;height:1px;pointer-events:none">
       <div class="salesq"><div class="search sm"><svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="salesQ" type="search" autocomplete="off" placeholder="Поиск в записанных продажах"><button class="x hidden" id="salesQx" aria-label="Очистить">×</button></div></div>
@@ -645,7 +648,7 @@ function recalcSales(s){
     q+=r.q; sum+=r.q*r.pr; m+=(r.m||0);
   });
   s.qty=q; s.sum=sum; s.margin=m;
-  s.expSum=(s.exp||[]).reduce(function(t,x){ return t+x.sum; },0);
+  s.expSum=(s.exp||[]).filter(function(x){ return (x.k||'exp')==='exp'; }).reduce(function(t,x){ return t+x.sum; },0);
 }
 function itemOf(sz,nm){
   sz=String(sz).toUpperCase(); nm=String(nm).toUpperCase();
@@ -759,7 +762,7 @@ function openSale(k){
     '<div class="f"><input class="inp" id="sCom" maxlength="200" placeholder="Комментарий (не обязательно)"></div>'+
     '<div id="sNote"></div>'+
     '<button class="go" id="sGo">Продать</button>'+
-    '<button class="btn" id="sAdd" style="width:100%;margin-top:8px">+ Добавить ещё позицию в комплект</button>'+
+    '<div style="display:flex;gap:8px;margin-top:8px"><button class="btn" id="sAdd" style="flex:1">+ В комплект</button><button class="btn pre" id="sPre" style="flex:1">Предоплата</button></div>'+
     '<details class="more2" style="margin:8px 0 0"><summary>Подробнее</summary><div id="sMore"></div></details></div>';
   var sh=$('sheet'); sh.innerHTML=h; sh.classList.remove('hidden'); $('shade').classList.remove('hidden');
   requestAnimationFrame(function(){ sh.classList.add('on'); $('shade').classList.add('on'); });
@@ -906,6 +909,7 @@ $('sheet').addEventListener('click',function(e){
   var t=e.target, it=S.sale.it; if(!it) return;
   if(t.id==='sGo'){ doSale(); return; }
   if(t.id==='sAdd'){ addToCart(); return; }
+  if(t.id==='sPre'){ var pit=it, pq=Math.round(num($('sQty').value))||4, pp=num($('sPrice').value)||it.pr; closeSheet(); prepayDialog(pit,pq,pp); return; }
   var st=t.getAttribute&&t.getAttribute('data-s');
   if(st){ $('sQty').value=Math.max(1,Math.round(num($('sQty').value))+num(st)); S.sale.confirm=false; syncTotal(); renderSaleSheet(); return; }
   var q=t.getAttribute&&t.getAttribute('data-q'); if(q){ $('sQty').value=q; S.sale.confirm=false; syncTotal(); renderSaleSheet(); return; }
@@ -1119,12 +1123,13 @@ function renderSales(){
     });
     other.forEach(function(r){ h+=opHtml(r,true); });
   }
-  if(exps.length){
-    h+='<div class="h2 owner">Расходы · '+money(exps.reduce(function(t,x){ return t+x.sum; },0))+'</div>';
-    exps.forEach(function(x){
-      h+='<div class="op expo owner"><div class="l"><b>'+esc(x.text)+'</b>'+(x.t?'<div class="m"><span class="tm">'+esc(x.t)+'</span></div>':'')+(x.pend?'<div class="m">записываю…</div>':'<div class="btns"><button class="undo" data-act="uexp" data-row="'+x.row+'">Отменить</button></div>')+'</div><div class="r">−'+money(x.sum)+'</div></div>';
+  [['pre','Предоплаты',''],['rent','Аренда',' owner'],['exp','Расходы',' owner']].forEach(function(g){
+    var list=exps.filter(function(x){ return (x.k||'exp')===g[0]; }); if(!list.length) return;
+    h+='<div class="h2'+g[2]+'">'+g[1]+' · '+money(list.reduce(function(t,x){ return t+x.sum; },0))+'</div>';
+    list.forEach(function(x){
+      h+='<div class="op dk '+g[0]+g[2]+'"><div class="l"><b>'+esc(x.text)+'</b>'+(x.t?'<div class="m"><span class="tm">'+esc(x.t)+'</span></div>':'')+(x.pend?'<div class="m">записываю…</div>':'<div class="btns"><button class="undo" data-act="uexp" data-row="'+x.row+'">Отменить</button></div>')+'</div><div class="r">'+(g[0]==='exp'?'−':'+')+money(x.sum)+'</div></div>';
     });
-  }
+  });
   el.innerHTML=h;
 }
 function setSalesDay(iso){
@@ -1189,10 +1194,11 @@ function editDialog(r){
     });
   };
 }
-function expenseDialog(){
+function expenseDialog(kind){
+  kind=kind==='rent'?'rent':'exp';
   var d=document.createElement('div'); d.className='dlg';
-  d.innerHTML='<div class="box"><p><b>Расход за '+ddmm(S.salesDay)+'</b><br><span style="font-weight:400;color:var(--ink2)">Запишется красной строкой в продажи дня</span></p>'+
-    '<div class="lbl">На что</div><input class="inp" id="exT" placeholder="например: Асылдын работа" maxlength="120" style="margin-bottom:10px">'+
+  d.innerHTML='<div class="box"><p><b>'+(kind==='rent'?'Аренда':'Расход')+' за '+ddmm(S.salesDay)+'</b><br><span style="font-weight:400;color:var(--ink2)">'+(kind==='rent'?'Зелёной строкой, сумма в плюс, без маржи':'Запишется красной строкой в продажи дня')+'</span></p>'+
+    '<div class="lbl">'+(kind==='rent'?'Кто платит':'На что')+'</div><input class="inp" id="exT" placeholder="'+(kind==='rent'?'например: Бакыт ага':'например: Асылдын работа')+'" maxlength="120" style="margin-bottom:10px">'+
     '<div class="lbl">Сумма, ₸</div><input class="inp" id="exS" inputmode="numeric" placeholder="10000" style="margin-bottom:12px">'+
     '<div class="b2"><button class="btn" id="exN">Отмена</button><button class="btn pri" id="exY">Записать</button></div></div>';
   document.body.appendChild(d);
@@ -1201,15 +1207,55 @@ function expenseDialog(){
   d.querySelector('#exY').onclick=function(){
     var t=d.querySelector('#exT').value.trim(), sm=Math.round(num(d.querySelector('#exS').value));
     if(!t||!(sm>0)){ toast('Проверьте поля','Название и сумма больше нуля',{err:true}); return; }
-    var sd=S.sales, pe={row:0,text:t,sum:sm,t:nowHM(),pend:1};
-    if(sd){ sd.exp=(sd.exp||[]).concat([pe]); recalcSales(sd); }
-    document.body.removeChild(d); renderSales(); toast('Записываю расход',t+' −'+fm(sm)+' ₸',{ms:60000});
-    run('appAddDayExpense',{reqId:rid(),text:t,sum:sm,date:S.salesDay}).then(function(x){
-      applyData(x); saveCache(); renderSales(); toast('Расход записан',t+' −'+fm(sm)+' ₸');
-    }).catch(function(er){ if(sd){ sd.exp=sd.exp.filter(function(x){ return x!==pe; }); recalcSales(sd); renderSales(); } toast('Не записано',er.message,{err:true}); });
+    if(kind==='rent'&&!/аренд/i.test(t)) t+=' аренда';
+    addDayRow(kind,t,sm); document.body.removeChild(d);
   };
 }
-$('btnExp').onclick=expenseDialog;
+// особая строка дня (расход / аренда / предоплата): сразу на экране, сервер в фоне
+function addDayRow(kind,t,sm){
+  {
+    var sd=S.sales, pe={row:0,text:t,sum:sm,k:kind,t:nowHM(),pend:1}, nm={exp:'Расход',rent:'Аренда',pre:'Предоплата'}[kind], sg=kind==='exp'?' −':' +';
+    if(sd){ sd.exp=(sd.exp||[]).concat([pe]); recalcSales(sd); }
+    renderSales(); toast('Записываю: '+nm.toLowerCase(),t+sg+fm(sm)+' ₸',{ms:60000});
+    run('appAddDayExpense',{reqId:rid(),kind:kind,text:t,sum:sm,date:S.salesDay}).then(function(x){
+      applyData(x); saveCache(); renderSales(); toast({exp:'Расход записан',rent:'Аренда записана',pre:'Предоплата записана'}[kind],t+sg+fm(sm)+' ₸');
+    }).catch(function(er){ if(sd){ sd.exp=sd.exp.filter(function(x){ return x!==pe; }); recalcSales(sd); renderSales(); } toast('Не записано',er.message,{err:true}); });
+  }
+}
+// предоплата / задаток: позиция + сколько штук + договорная цена + сколько внесли + клиент. Склад не трогает.
+function prepayDialog(it0,q0,p0){
+  var it=it0||null;
+  var d=document.createElement('div'); d.className='dlg';
+  function posHtml(){
+    if(it) return '<div class="cli"><div class="l"><b>'+esc(it.n)+'</b><small>'+esc(it.s)+' · на складе '+fm(it.o)+' шт</small></div><button class="cx" id="pX" aria-label="Другая позиция">×</button></div>';
+    return '<input class="inp" id="pQ" placeholder="Позиция: размер или название" autocomplete="off"><div class="sug" id="pSug" style="max-height:240px;overflow:auto"></div>';
+  }
+  d.innerHTML='<div class="box"><p><b>Предоплата за '+ddmm(S.salesDay)+'</b><br><span style="font-weight:400;color:var(--ink2)">Жёлтой строкой, сумма в плюс, без маржи. Склад не меняется.</span></p>'+
+    '<div id="pPos">'+posHtml()+'</div>'+
+    '<div class="cin" style="margin:10px 0"><input class="inp" id="pN" inputmode="numeric" value="'+(q0||4)+'"> шт по <input class="inp" id="pP" inputmode="numeric" style="width:110px" value="'+(p0?Math.round(p0):'')+'" placeholder="цена"> ₸</div>'+
+    '<div class="lbl">Внесли, ₸</div><input class="inp" id="pS" inputmode="numeric" placeholder="20000" style="margin-bottom:10px">'+
+    '<div class="lbl">Клиент, телефон, когда заберёт</div><input class="inp" id="pC" maxlength="120" placeholder="например: Серик ага 8 777 777 59 19, понедельник" style="margin-bottom:12px">'+
+    '<div class="b2"><button class="btn" id="pNo">Отмена</button><button class="btn pri" id="pGo">Записать</button></div></div>';
+  document.body.appendChild(d);
+  function bindQ(){ var q=d.querySelector('#pQ'); if(!q) return; q.focus(); q.oninput=function(){ var pq=parseQ(q.value); var a=q.value.trim()?sortItems(S.items.filter(function(x){ return matches(x,pq); })).slice(0,20):[]; d.querySelector('#pSug').innerHTML=a.map(sugBtn).join(''); }; }
+  bindQ();
+  d.addEventListener('click',function(e){
+    var sb=e.target.closest('#pSug button[data-k]');
+    if(sb){ var k=sb.getAttribute('data-k'); S.items.forEach(function(x){ if(x.k===k) it=x; }); d.querySelector('#pPos').innerHTML=posHtml(); if(it&&!num(d.querySelector('#pP').value)&&it.pr) d.querySelector('#pP').value=Math.round(it.pr); return; }
+    if(e.target.closest('#pX')){ it=null; d.querySelector('#pPos').innerHTML=posHtml(); bindQ(); return; }
+    if(e.target.closest('#pNo')){ document.body.removeChild(d); return; }
+    if(e.target.closest('#pGo')){
+      var n=Math.round(num(d.querySelector('#pN').value)), pr=Math.round(num(d.querySelector('#pP').value)), sm=Math.round(num(d.querySelector('#pS').value)), c=d.querySelector('#pC').value.trim();
+      if(!it){ toast('Выберите позицию','',{err:true}); return; }
+      if(!(sm>0)){ toast('Сколько внесли?','Сумма больше нуля',{err:true}); return; }
+      var t='предоплата '+fm(sm)+'. '+(c?c+'. ':'')+it.s+' '+it.n+' — '+(n>0?n:'?')+' шт'+(pr>0?' по '+fm(pr)+' (всего '+fm(pr*(n||0))+')':'');
+      document.body.removeChild(d); addDayRow('pre',t,sm);
+    }
+  });
+}
+$('btnExp').onclick=function(){ expenseDialog('exp'); };
+$('btnRent').onclick=function(){ expenseDialog('rent'); };
+$('btnPre').onclick=function(){ prepayDialog(null); };
 function returnDialog(r){
   var d=document.createElement('div'); d.className='dlg';
   d.innerHTML='<div class="box"><p><b>Возврат '+esc(r.s)+'</b><br><span style="font-weight:400;color:var(--ink2)">'+esc(r.n)+'</span></p>'+

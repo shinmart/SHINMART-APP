@@ -630,16 +630,26 @@ function appEditSale(p) {
   });
 }
 
-// Расход дня: строка в блоке дня, красная заливка, белый текст, суммы идут минусом (как «АСЫЛДЫН работа −10 000»)
+// Особые строки дня — как владелец пишет их руками:
+//   exp  расход:      красная заливка, белый текст, СУММА и МАРЖА минусом («АСЫЛДЫН работа −10 000»)
+//   rent аренда:      зелёная заливка, СУММА плюсом, без себестоимости и маржи («Бакыт ага аренда 10 000»)
+//   pre  предоплата:  жёлтая заливка, СУММА плюсом, без маржи; в тексте позиция и клиент («… Серик ага задаток 20 000»)
+const APP_DAY_KINDS = {
+  exp: { bg: '#ea3323', fc: '#ffffff', bold: true, owner: true },
+  rent: { bg: '#00ff00', fc: '#000000', bold: false, owner: true },
+  pre: { bg: '#ffff00', fc: '#000000', bold: false, owner: false }
+};
 function appAddDayExpense(p) {
   return appGuard_(p, true, email => {
-    opsNeedOwner_(email);
+    const kind = APP_DAY_KINDS[p.kind] ? p.kind : 'exp';
+    const K = APP_DAY_KINDS[kind];
+    if (K.owner) opsNeedOwner_(email);
     const ss = getSS_();
     const tz = ss.getSpreadsheetTimeZone();
-    const text = String(p.text || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 120);
+    const text = String(p.text || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 200);
     const sum = Math.round(appNum_(p.sum));
-    if (!text) throw new Error('Напишите, на что расход.');
-    if (!(sum > 0)) throw new Error('Сумма расхода должна быть больше нуля.');
+    if (!text) throw new Error(kind === 'exp' ? 'Напишите, на что расход.' : 'Напишите текст строки.');
+    if (!(sum > 0)) throw new Error('Сумма должна быть больше нуля.');
     if (/^[=+\-@]/.test(text)) throw new Error('Текст не должен начинаться со знака = + - @.');
     const dateStr = /^\d{4}-\d{2}-\d{2}$/.test(p.date || '') ? p.date : appToday_();
     const ps = ss.getSheetByName(SHEETS.PRODAJI);
@@ -649,12 +659,18 @@ function appAddDayExpense(p) {
     if (!px.sum || !px.sebes || !px.marja) throw new Error('На листе ПРОДАЖИ не найдены колонки СУММА, СЕБЕС, МАРЖА.');
     const r = appPlaceSaleRow_(ps, tz, dateStr, 1);
     ps.getRange(r, ph.brand).setValue(text);
-    ps.getRange(r, px.sum).setValue(-sum);
-    ps.getRange(r, px.sebes).setValue(0);
-    ps.getRange(r, px.marja).setValue(-sum);
+    if (kind === 'exp') {
+      ps.getRange(r, px.sum).setValue(-sum);
+      ps.getRange(r, px.sebes).setValue(0);
+      ps.getRange(r, px.marja).setValue(-sum);
+    } else {
+      ps.getRange(r, px.sum).setValue(sum);
+      ps.getRange(r, px.sebes).clearContent();
+      ps.getRange(r, px.marja).clearContent();
+    }
     const lastCol = Math.max(px.marja, px.sum, px.sebes, ph.qty);
-    try { ps.getRange(r, 1, 1, lastCol).setBackground('#ea3323').setFontColor('#ffffff').setFontWeight('bold'); } catch (e) { console.error(e); }
-    appLog_(email, 'РАСХОД', SHEETS.PRODAJI, r, text, '', sum, [text, sum, dateStr].join('|'));
+    try { ps.getRange(r, 1, 1, lastCol).setBackground(K.bg).setFontColor(K.fc).setFontWeight(K.bold ? 'bold' : 'normal'); } catch (e) { console.error(e); }
+    appLog_(email, 'РАСХОД', SHEETS.PRODAJI, r, text, kind, sum, [text, sum, kind, dateStr].join('|'));
     try { PropertiesService.getScriptProperties().setProperty('needsRebuild', 'true'); } catch (e) { console.error(e); }
     return Object.assign({ ok: true, row: r }, appTodayPack_(dateStr));
   });
@@ -662,7 +678,6 @@ function appAddDayExpense(p) {
 
 function appUndoDayExpense(p) {
   return appGuard_(p, true, email => {
-    opsNeedOwner_(email);
     const ss = getSS_();
     const ps = ss.getSheetByName(SHEETS.PRODAJI);
     const map = getHeaderMap(ps);
@@ -673,6 +688,9 @@ function appUndoDayExpense(p) {
     if (!rec) throw new Error('Этот расход записали не через приложение. Удалите строку в таблице вручную.');
     const text = String(ps.getRange(row, ph.brand).getValue());
     if (rec.sig.indexOf(text + '|') !== 0) throw new Error('Строка в таблице изменилась. Удалите её вручную.');
+    const sp = rec.sig.split('|');
+    const kind0 = sp.length >= 4 && APP_DAY_KINDS[sp[sp.length - 2]] ? sp[sp.length - 2] : 'exp';
+    if (APP_DAY_KINDS[kind0].owner) opsNeedOwner_(email);
     // оформление берём у ближайшей обычной строки продажи выше
     let fmt = 0;
     for (let r = row - 1; r >= DATA_START_ROW && r > row - 40; r--) {
@@ -705,14 +723,14 @@ function appDayExpenses_(ps, day) {
   appLogRows_().v.forEach(r => {
     if (r[3] !== SHEETS.PRODAJI || r[2] !== 'РАСХОД') return;
     if (r[9]) { delete map[r[4]]; return; }
-    map[r[4]] = { t: r[0], text: String(r[5]), sum: appNum_(r[7]), sig: String(r[8]) };
+    map[r[4]] = { t: r[0], text: String(r[5]), sum: appNum_(r[7]), sig: String(r[8]), kind: APP_DAY_KINDS[r[6]] ? String(r[6]) : 'exp' };
   });
   let tz = 'Asia/Almaty';
   try { tz = Session.getScriptTimeZone() || tz; } catch (e) { /* в тестах нет */ }
   Object.keys(map).forEach(k => {
     const x = map[k];
     if (x.sig.split('|').pop() !== day) return;
-    out.push({ row: Number(k), text: x.text, sum: x.sum, t: x.t instanceof Date ? Utilities.formatDate(x.t, tz, 'HH:mm') : '' });
+    out.push({ row: Number(k), text: x.text, sum: x.sum, k: x.kind, t: x.t instanceof Date ? Utilities.formatDate(x.t, tz, 'HH:mm') : '' });
   });
   return out;
 }
@@ -1155,7 +1173,7 @@ function appSalesOfDay_(day, tz) {
     if (appIsWo_(s.pay)) { out.margin += s.margin; return; }
     out.qty += s.qty; out.sum += s.price * s.qty; out.cost += s.cost; out.margin += s.margin;
   });
-  try { out.exp = appDayExpenses_(ps, day); out.expSum = out.exp.reduce((t, x) => t + x.sum, 0); } catch (e) { out.exp = []; out.expSum = 0; console.error(e); }
+  try { out.exp = appDayExpenses_(ps, day); out.expSum = out.exp.filter(x => x.k === 'exp').reduce((t, x) => t + x.sum, 0); } catch (e) { out.exp = []; out.expSum = 0; console.error(e); }
   try {
     if (appHasReturns_()) appReturns_(day, day, tz).forEach(x => {
       out.rows.push({ row: x.row, s: x.size, n: x.name, q: x.q, pr: x.q ? x.refund / x.q : 0, c: x.cost, m: -(x.refund - x.cost), u: x.u, w: '', y: 'ВОЗВРАТ', ret: 1 });
