@@ -310,6 +310,7 @@ body.seller .tabbar [data-go=abc]{display:none}
 .cin .inp{height:38px;width:76px;padding:0 8px;font-size:15px}
 .cx{width:34px;height:34px;font-size:22px;color:var(--ink3)}
 body.hascart .toast{bottom:calc(var(--nav) + env(safe-area-inset-bottom) + 78px)}
+body:has(.dlg) .toast{opacity:0;visibility:hidden}
 .ctot{display:flex;justify-content:space-between;align-items:baseline;font-size:14px;color:var(--ink2);margin:0 0 12px}.ctot b{font-size:20px;color:var(--ink)}
 @media (min-width:1000px){body.hascart .toast{bottom:84px}.cartbar{left:calc(var(--side) + 24px);right:24px;bottom:20px}}
 @media (min-width:1000px){
