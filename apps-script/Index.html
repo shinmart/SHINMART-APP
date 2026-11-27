@@ -345,8 +345,11 @@ body:has(.dlg) .toast,body:has(#sheet:not(.hidden)) .toast{opacity:0;visibility:
   .row:hover,.sug button:hover,.cls-b .op:hover{background:var(--bg)}
   main{padding-bottom:40px}
   #tab-sales.on{display:grid;grid-template-columns:minmax(380px,480px) minmax(0,1fr);align-items:start}
-  #tab-sales>.sec{grid-column:1;grid-row:1/span 6;position:sticky;top:var(--topH,64px);min-height:calc(100vh - var(--topH,64px));border-right:1px solid var(--line)}
-  #tab-sales>:not(.sec){grid-column:2}
+  /* две колонки крутятся отдельно: колесо мыши листает ту, над которой курсор */
+  #tab-sales>.sec,#tab-sales>.salesR{grid-row:1;position:sticky;top:var(--topH,64px);height:var(--salesH,calc(100vh - var(--topH,64px)));overflow-y:auto;overscroll-behavior:contain}
+  #tab-sales>.sec{grid-column:1;border-right:1px solid var(--line)}
+  main:has(#tab-sales.on){padding-bottom:0}
+  #tab-sales>.salesR{grid-column:2;padding-bottom:40px}
   #tab-buy.on{display:grid;grid-template-columns:minmax(380px,540px) minmax(0,1fr)}
   #tab-buy>.sec:nth-child(1),#tab-buy>.sec:nth-child(2){grid-column:1}
   #tab-buy>.sec:nth-child(3){grid-column:2;grid-row:1/span 2;border-top:0;border-left:1px solid var(--line)}
@@ -405,11 +408,13 @@ body:has(.dlg) .toast,body:has(#sheet:not(.hidden)) .toast{opacity:0;visibility:
         <div class="sug" id="sSug"></div>
         <div id="hot"></div>
       </div>
+      <div class="salesR">
       <div class="h2 hrow" style="padding-top:14px;padding-bottom:0"><span>Записано</span><span class="dacts"><button class="btn smb owner" id="btnExp">− Расход</button><button class="btn smb rent owner" id="btnRent">Аренда</button><button class="btn smb pre" id="btnPre">Предоплата</button></span></div>
       <div class="dstrip" id="dstrip"></div>
       <input type="date" id="salesDate" aria-label="Дата" style="position:absolute;opacity:0;width:1px;height:1px;pointer-events:none">
       <div class="salesq"><div class="search sm"><svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="salesQ" type="search" autocomplete="off" placeholder="Поиск в записанных продажах"><button class="x hidden" id="salesQx" aria-label="Очистить">×</button></div></div>
       <div id="salesBody"></div>
+      </div>
     </section>
 
     <!-- ПРИХОД -->
@@ -1765,6 +1770,8 @@ function setTab(t){
 function layout(){
   var h=$('top').offsetHeight; document.documentElement.style.setProperty('--topH',h+'px');
   var sb=$('sbar'); document.documentElement.style.setProperty('--grpTop',(h+sb.offsetHeight)+'px');
+  // высота колонок продажи на компьютере: от их верха (под шапкой и плашками) до низа окна
+  var ts=$('tab-sales'); if(ts&&ts.classList.contains('on')){ var t0=ts.getBoundingClientRect().top+window.scrollY; document.documentElement.style.setProperty('--salesH',Math.max(320,window.innerHeight-t0)+'px'); }
 }
 function setHide(v){
   document.body.classList.toggle('hide',v); lsSet('shm_hide',v?'1':'0');
